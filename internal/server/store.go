@@ -15,7 +15,7 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 
-	"dozor/internal/proto"
+	"sentra/internal/proto"
 )
 
 type Store struct{ db *sql.DB }

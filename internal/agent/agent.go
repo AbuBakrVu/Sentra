@@ -18,10 +18,10 @@ import (
 	"strings"
 	"time"
 
-	"dozor/internal/proto"
+	"sentra/internal/proto"
 )
 
-// Config хранится в /etc/dozor/agent.json (права 0600).
+// Config хранится в /etc/sentra/agent.json (права 0600).
 type Config struct {
 	Server   string `json:"server"` // https://192.168.1.10
 	Pin      string `json:"pin"`    // sha256 SPKI сертификата сервера, base64
@@ -111,7 +111,7 @@ func Run(ctx context.Context, cfg *Config, version string) error {
 	cl := NewClient(cfg.Pin)
 	col := NewCollector()
 	interval := time.Duration(cfg.Interval) * time.Second
-	log.Printf("dozor-agent %s: сервер %s, интервал %s", version, cfg.Server, interval)
+	log.Printf("sentra-agent %s: сервер %s, интервал %s", version, cfg.Server, interval)
 
 	// первый сбор через 5 секунд, чтобы скорости CPU и сети посчитались
 	timer := time.NewTimer(5 * time.Second)

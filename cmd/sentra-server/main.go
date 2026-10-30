@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"dozor/internal/server"
-	"dozor/web"
+	"sentra/internal/server"
+	"sentra/web"
 )
 
 var version = "0.1.0-dev"
@@ -23,15 +23,15 @@ func env(k, def string) string {
 
 func main() {
 	cfg := server.Config{
-		Listen:    env("DOZOR_LISTEN", ":443"),
-		DataDir:   env("DOZOR_DATA", "/var/lib/dozor"),
-		VMURL:     env("DOZOR_VM_URL", "http://127.0.0.1:8428"),
-		PublicURL: os.Getenv("DOZOR_PUBLIC_URL"),
-		AgentsDir: env("DOZOR_AGENTS_DIR", "/opt/dozor/agents"),
-		AdminPass: os.Getenv("DOZOR_ADMIN_PASSWORD"),
+		Listen:    env("SENTRA_LISTEN", ":443"),
+		DataDir:   env("SENTRA_DATA", "/var/lib/sentra"),
+		VMURL:     env("SENTRA_VM_URL", "http://127.0.0.1:8428"),
+		PublicURL: os.Getenv("SENTRA_PUBLIC_URL"),
+		AgentsDir: env("SENTRA_AGENTS_DIR", "/opt/sentra/agents"),
+		AdminPass: os.Getenv("SENTRA_ADMIN_PASSWORD"),
 		Version:   version,
 	}
-	if h := os.Getenv("DOZOR_CERT_HOSTS"); h != "" {
+	if h := os.Getenv("SENTRA_CERT_HOSTS"); h != "" {
 		for _, x := range strings.Split(h, ",") {
 			cfg.CertHosts = append(cfg.CertHosts, strings.TrimSpace(x))
 		}
@@ -49,6 +49,6 @@ func main() {
 		WriteTimeout:      60 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
-	log.Printf("Дозор %s слушает %s, отпечаток ключа sha256//%s", version, cfg.Listen, s.Pin())
+	log.Printf("Sentra %s слушает %s, отпечаток ключа sha256//%s", version, cfg.Listen, s.Pin())
 	log.Fatal(srv.ListenAndServeTLS("", ""))
 }

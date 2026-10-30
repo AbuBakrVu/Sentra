@@ -19,12 +19,12 @@ import (
 	"text/template"
 	"time"
 
-	"dozor/internal/proto"
+	"sentra/internal/proto"
 )
 
 type Config struct {
 	Listen    string // :443
-	DataDir   string // /var/lib/dozor
+	DataDir   string // /var/lib/sentra
 	VMURL     string // http://victoriametrics:8428
 	PublicURL string // https://192.168.1.10 (если пусто — берём из запроса)
 	AgentsDir string // каталог с бинарниками агентов
@@ -49,7 +49,7 @@ func New(cfg Config, web fs.FS) (*Server, *tls.Certificate, error) {
 	if err := os.MkdirAll(cfg.DataDir, 0o700); err != nil {
 		return nil, nil, err
 	}
-	st, err := OpenStore(filepath.Join(cfg.DataDir, "dozor.db"))
+	st, err := OpenStore(filepath.Join(cfg.DataDir, "sentra.db"))
 	if err != nil {
 		return nil, nil, fmt.Errorf("база данных: %w", err)
 	}
@@ -147,7 +147,7 @@ func (s *Server) publicURL(r *http.Request) string {
 
 type ctxKey struct{}
 
-const cookieName = "dozor_session"
+const cookieName = "sentra_session"
 
 func (s *Server) auth(next func(http.ResponseWriter, *http.Request, *User)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -331,7 +331,7 @@ func num(m map[string]any, k string) float64 {
 }
 
 var installTpl = template.Must(template.New("i").Parse(`#!/bin/sh
-# Установка агента мониторинга «Дозор»
+# Установка агента мониторинга Sentra
 set -eu
 SERVER='{{.Server}}'
 TOKEN='{{.Token}}'
@@ -349,21 +349,21 @@ command -v systemctl >/dev/null 2>&1 || { echo "Нужен systemd" >&2; exit 1;
 echo "Скачиваю агент ($ARCH)..."
 TMP=$(mktemp)
 trap 'rm -f "$TMP"' EXIT
-curl -fsSk --pinnedpubkey "sha256//$PIN" -o "$TMP" "$SERVER/download/dozor-agent-linux-$ARCH"
-systemctl stop dozor-agent >/dev/null 2>&1 || true
-install -m 0755 "$TMP" /usr/local/bin/dozor-agent
+curl -fsSk --pinnedpubkey "sha256//$PIN" -o "$TMP" "$SERVER/download/sentra-agent-linux-$ARCH"
+systemctl stop sentra-agent >/dev/null 2>&1 || true
+install -m 0755 "$TMP" /usr/local/bin/sentra-agent
 
 echo "Регистрирую на сервере..."
-/usr/local/bin/dozor-agent enroll --server "$SERVER" --token "$TOKEN" --pin "$PIN"
+/usr/local/bin/sentra-agent enroll --server "$SERVER" --token "$TOKEN" --pin "$PIN"
 
-cat > /etc/systemd/system/dozor-agent.service <<'UNIT'
+cat > /etc/systemd/system/sentra-agent.service <<'UNIT'
 [Unit]
-Description=Dozor monitoring agent
+Description=Sentra monitoring agent
 After=network-online.target
 Wants=network-online.target
 
 [Service]
-ExecStart=/usr/local/bin/dozor-agent run
+ExecStart=/usr/local/bin/sentra-agent run
 Restart=always
 RestartSec=10
 
@@ -372,7 +372,7 @@ WantedBy=multi-user.target
 UNIT
 
 systemctl daemon-reload
-systemctl enable --now dozor-agent >/dev/null 2>&1
+systemctl enable --now sentra-agent >/dev/null 2>&1
 echo "Готово. Через минуту сервер появится в панели $SERVER"
 `))
 
@@ -391,7 +391,7 @@ func (s *Server) installScript(w http.ResponseWriter, r *http.Request) {
 	installTpl.Execute(w, map[string]string{"Server": s.publicURL(r), "Token": tok, "Pin": s.pin})
 }
 
-var agentFileRe = regexp.MustCompile(`^dozor-agent-(linux|windows)-(amd64|arm64)(\.exe)?$`)
+var agentFileRe = regexp.MustCompile(`^sentra-agent-(linux|windows)-(amd64|arm64)(\.exe)?$`)
 
 func (s *Server) download(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("file")

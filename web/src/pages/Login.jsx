@@ -18,7 +18,7 @@ export default function Login({ onLogin }) {
       <form className="login-card form" onSubmit={submit}>
         <div className="brand big">
           <svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="11" fill="none" stroke="currentColor" strokeWidth="3" /><circle cx="16" cy="16" r="4" fill="currentColor" /></svg>
-          Дозор
+          Sentra
         </div>
         <p className="muted">Мониторинг серверов и сети</p>
         <label>Логин<input value={login} onChange={(e) => setLogin(e.target.value)} autoComplete="username" required /></label>

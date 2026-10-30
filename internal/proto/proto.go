@@ -41,7 +41,7 @@ type MetricsBatch struct {
 	Inventory *Inventory `json:"inventory,omitempty"` // раз в N циклов
 }
 
-// Имена метрик (без префикса dozor_, сервер добавит его сам).
+// Имена метрик (без префикса sentra_, сервер добавит его сам).
 const (
 	MCPUUsage    = "cpu_usage_percent"
 	MCPUIOWait   = "cpu_iowait_percent"

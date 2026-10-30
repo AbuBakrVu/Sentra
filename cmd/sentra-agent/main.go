@@ -10,15 +10,15 @@ import (
 	"syscall"
 	"time"
 
-	"dozor/internal/agent"
+	"sentra/internal/agent"
 )
 
 var version = "0.1.0-dev"
 
-const defaultCfg = "/etc/dozor/agent.json"
+const defaultCfg = "/etc/sentra/agent.json"
 
 func usage() {
-	fmt.Fprintf(os.Stderr, `dozor-agent %s
+	fmt.Fprintf(os.Stderr, `sentra-agent %s
 
 Команды:
   enroll --server URL --token TOKEN --pin PIN   зарегистрировать агент на сервере

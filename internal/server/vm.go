@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"dozor/internal/proto"
+	"sentra/internal/proto"
 )
 
 // VM — клиент VictoriaMetrics (single-node).
@@ -28,7 +28,7 @@ func NewVM(base string) *VM {
 	return &VM{base: strings.TrimRight(base, "/"), cl: &http.Client{Transport: tr, Timeout: 15 * time.Second}}
 }
 
-const metricPrefix = "dozor_"
+const metricPrefix = "sentra_"
 
 func escLabel(v string) string {
 	return strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\n`).Replace(v)

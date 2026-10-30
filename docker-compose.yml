@@ -1,4 +1,4 @@
-# Коробка «Дозор»: docker compose up -d --build
+# Коробка Sentra: docker compose up -d --build
 services:
   victoriametrics:
     image: victoriametrics/victoria-metrics:v1.106.1
@@ -9,26 +9,26 @@ services:
     volumes:
       - vm-data:/storage
     restart: unless-stopped
-    # порт наружу не публикуем: доступ только у сервера Дозора
+    # порт наружу не публикуем: доступ только у сервера Sentra
 
-  dozor:
+  sentra:
     build: .
-    image: dozor:0.1.0
+    image: sentra:0.1.0
     depends_on:
       - victoriametrics
     ports:
       - "443:8443"
     environment:
       # адрес, по которому агенты и браузер видят коробку (иначе берётся из адресной строки)
-      DOZOR_PUBLIC_URL: ${DOZOR_PUBLIC_URL:-}
+      SENTRA_PUBLIC_URL: ${SENTRA_PUBLIC_URL:-}
       # IP/имена в сертификате, через запятую
-      DOZOR_CERT_HOSTS: ${DOZOR_CERT_HOSTS:-}
-      DOZOR_ADMIN_PASSWORD: ${DOZOR_ADMIN_PASSWORD:-}
+      SENTRA_CERT_HOSTS: ${SENTRA_CERT_HOSTS:-}
+      SENTRA_ADMIN_PASSWORD: ${SENTRA_ADMIN_PASSWORD:-}
       TZ: ${TZ:-Europe/Moscow}
     volumes:
-      - dozor-data:/var/lib/dozor
+      - sentra-data:/var/lib/sentra
     restart: unless-stopped
 
 volumes:
   vm-data:
-  dozor-data:
+  sentra-data:

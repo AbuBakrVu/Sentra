@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	"dozor/internal/proto"
+	"sentra/internal/proto"
 )
 
 // Collector хранит предыдущие значения счётчиков, чтобы считать скорости.
@@ -27,7 +27,7 @@ type cpuTimes struct{ total, idle, iowait uint64 }
 type netCounters struct{ rx, tx, errs uint64 }
 
 func NewCollector() *Collector {
-	p := os.Getenv("DOZOR_PROC")
+	p := os.Getenv("SENTRA_PROC")
 	if p == "" {
 		p = "/proc"
 	}

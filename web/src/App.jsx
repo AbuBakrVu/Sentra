@@ -9,7 +9,7 @@ import Login from './pages/Login.jsx'
 // Минимальный роутер на History API: нам хватает четырёх экранов.
 export function navigate(to) {
   window.history.pushState({}, '', to)
-  window.dispatchEvent(new Event('dozor:nav'))
+  window.dispatchEvent(new Event('sentra:nav'))
   window.scrollTo(0, 0)
 }
 
@@ -28,8 +28,8 @@ function usePath() {
   useEffect(() => {
     const on = () => setPath(window.location.pathname)
     window.addEventListener('popstate', on)
-    window.addEventListener('dozor:nav', on)
-    return () => { window.removeEventListener('popstate', on); window.removeEventListener('dozor:nav', on) }
+    window.addEventListener('sentra:nav', on)
+    return () => { window.removeEventListener('popstate', on); window.removeEventListener('sentra:nav', on) }
   }, [])
   return path
 }
@@ -41,8 +41,8 @@ export default function App() {
   useEffect(() => {
     api.me().then(setUser).catch(() => setUser(null))
     const out = () => setUser(null)
-    window.addEventListener('dozor:logout', out)
-    return () => window.removeEventListener('dozor:logout', out)
+    window.addEventListener('sentra:logout', out)
+    return () => window.removeEventListener('sentra:logout', out)
   }, [])
 
   const logout = useCallback(async () => {
@@ -69,9 +69,9 @@ export default function App() {
     <div className="shell">
       <header className="topbar">
         <div className="topbar-inner">
-          <Link to="/" className="brand" aria-label="Дозор, обзор">
+          <Link to="/" className="brand" aria-label="Sentra, обзор">
             <svg width="22" height="22" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="11" fill="none" stroke="currentColor" strokeWidth="3" /><circle cx="16" cy="16" r="4" fill="currentColor" /></svg>
-            Дозор
+            Sentra
           </Link>
           <nav className="nav">
             {tab('/', 'Обзор')}

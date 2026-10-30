@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Установка и обновление коробки мониторинга «Дозор» (репозиторий Sentra).
+# Установка и обновление коробки мониторинга Sentra.
 #
 #   curl -fsSL https://raw.githubusercontent.com/AbuBakrVu/Sentra/main/install.sh | sudo bash
 #
@@ -58,9 +58,9 @@ if [ ! -f .env ]; then
   IP="${SENTRA_IP:-$(ip route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}')}"
   [ -n "$IP" ] || fail "не удалось определить IP. Запустите с SENTRA_IP=<адрес коробки>"
   cat > .env <<EOF
-DOZOR_PUBLIC_URL=https://$IP
-DOZOR_CERT_HOSTS=$IP
-DOZOR_ADMIN_PASSWORD=
+SENTRA_PUBLIC_URL=https://$IP
+SENTRA_CERT_HOSTS=$IP
+SENTRA_ADMIN_PASSWORD=
 TZ=Europe/Moscow
 EOF
   chmod 600 .env
@@ -68,7 +68,7 @@ EOF
 else
   echo "Настройки уже есть, оставляю $DIR/.env без изменений"
 fi
-IP_URL="$(grep '^DOZOR_PUBLIC_URL=' .env | cut -d= -f2-)"
+IP_URL="$(grep '^SENTRA_PUBLIC_URL=' .env | cut -d= -f2-)"
 
 say "4/5 Собираю и запускаю (первый раз 3–5 минут)"
 docker compose up -d --build
@@ -79,9 +79,9 @@ for _ in $(seq 1 60); do
   sleep 2
 done
 curl -sk --max-time 2 https://127.0.0.1/api/health >/dev/null 2>&1 \
-  || fail "панель не ответила. Журнал: cd $DIR && docker compose logs dozor"
+  || fail "панель не ответила. Журнал: cd $DIR && docker compose logs sentra"
 
-PASS="$(docker compose exec -T dozor cat /var/lib/dozor/initial-admin-password.txt 2>/dev/null || true)"
+PASS="$(docker compose exec -T sentra cat /var/lib/sentra/initial-admin-password.txt 2>/dev/null || true)"
 
 say "Готово"
 echo "Панель:  $IP_URL"

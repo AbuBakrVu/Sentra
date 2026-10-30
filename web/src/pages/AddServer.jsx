@@ -58,7 +58,7 @@ export default function AddServer() {
         </li>
         <li>
           <h2>Выполните её на сервере</h2>
-          <p>Под пользователем с правами sudo. Скрипт скачает агент с этой панели, проверит её сертификат и запустит службу <code>dozor-agent</code>.</p>
+          <p>Под пользователем с правами sudo. Скрипт скачает агент с этой панели, проверит её сертификат и запустит службу <code>sentra-agent</code>.</p>
         </li>
         <li>
           <h2>Дождитесь появления сервера</h2>
@@ -83,7 +83,7 @@ export default function AddServer() {
           <li><b>public key does not match pinned public key</b>: сервер открыл не эту панель. Проверьте адрес в команде.</li>
           <li><b>Токен подключения недействителен</b>: команда устарела, создайте новую.</li>
           <li><b>Could not connect</b>: сервер не видит панель. Проверьте, что порт 443 панели доступен с сервера.</li>
-          <li>Журнал агента: <code>journalctl -u dozor-agent -n 50</code></li>
+          <li>Журнал агента: <code>journalctl -u sentra-agent -n 50</code></li>
         </ul>
       </details>
     </div>

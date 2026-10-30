@@ -1,4 +1,4 @@
-module dozor
+module sentra
 
 go 1.24.7
 

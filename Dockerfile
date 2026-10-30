@@ -20,22 +20,22 @@ ARG VERSION=0.1.0
 # агенты собираем без cgo, под обе архитектуры
 RUN for a in amd64 arm64; do \
       CGO_ENABLED=0 GOOS=linux GOARCH=$a go build -mod=vendor -trimpath \
-        -ldflags "-s -w -X main.version=$VERSION" -o /out/agents/dozor-agent-linux-$a ./cmd/dozor-agent; \
+        -ldflags "-s -w -X main.version=$VERSION" -o /out/agents/sentra-agent-linux-$a ./cmd/sentra-agent; \
     done
 # сервер с SQLite (cgo), статически
 RUN CGO_ENABLED=1 go build -mod=vendor -trimpath \
       -ldflags "-s -w -X main.version=$VERSION -extldflags '-static'" -tags 'sqlite_omit_load_extension' \
-      -o /out/dozor-server ./cmd/dozor-server
+      -o /out/sentra-server ./cmd/sentra-server
 
 # --- итоговый образ ---
 FROM alpine:3.20
-RUN apk add --no-cache ca-certificates tzdata && adduser -D -H -u 10001 dozor \
-    && mkdir -p /var/lib/dozor && chown dozor /var/lib/dozor
-COPY --from=go /out/dozor-server /usr/local/bin/dozor-server
-COPY --from=go /out/agents /opt/dozor/agents
-USER dozor
-ENV DOZOR_LISTEN=:8443 DOZOR_DATA=/var/lib/dozor DOZOR_AGENTS_DIR=/opt/dozor/agents DOZOR_VM_URL=http://victoriametrics:8428
+RUN apk add --no-cache ca-certificates tzdata && adduser -D -H -u 10001 sentra \
+    && mkdir -p /var/lib/sentra && chown sentra /var/lib/sentra
+COPY --from=go /out/sentra-server /usr/local/bin/sentra-server
+COPY --from=go /out/agents /opt/sentra/agents
+USER sentra
+ENV SENTRA_LISTEN=:8443 SENTRA_DATA=/var/lib/sentra SENTRA_AGENTS_DIR=/opt/sentra/agents SENTRA_VM_URL=http://victoriametrics:8428
 EXPOSE 8443
-VOLUME /var/lib/dozor
+VOLUME /var/lib/sentra
 HEALTHCHECK --interval=30s --timeout=5s CMD wget -q --no-check-certificate -O /dev/null https://127.0.0.1:8443/api/health || exit 1
-ENTRYPOINT ["/usr/local/bin/dozor-server"]
+ENTRYPOINT ["/usr/local/bin/sentra-server"]

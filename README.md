@@ -1,4 +1,4 @@
-# Дозор: мониторинг серверов и сети
+# Sentra: мониторинг серверов и сети
 
 Коробочный мониторинг для малого бизнеса. Ставится одной командой, сервер подключается одной командой, графики появляются через минуту. Без шаблонов, макросов и ключей PSK.
 
@@ -32,9 +32,9 @@ curl -fsSL https://raw.githubusercontent.com/AbuBakrVu/Sentra/main/install.sh | 
 ```bash
 git clone https://github.com/AbuBakrVu/Sentra.git /opt/sentra
 cd /opt/sentra
-cp .env.example .env && nano .env     # IP коробки в DOZOR_PUBLIC_URL и DOZOR_CERT_HOSTS
+cp .env.example .env && nano .env     # IP коробки в SENTRA_PUBLIC_URL и SENTRA_CERT_HOSTS
 docker compose up -d --build
-docker compose logs dozor | grep пароль
+docker compose logs sentra | grep пароль
 ```
 </details>
 
@@ -56,12 +56,12 @@ docker compose logs dozor | grep пароль
 Полезное на сервере с агентом:
 
 ```bash
-systemctl status dozor-agent
-journalctl -u dozor-agent -n 50
-dozor-agent collect          # разово показать, что собирает агент
+systemctl status sentra-agent
+journalctl -u sentra-agent -n 50
+sentra-agent collect          # разово показать, что собирает агент
 ```
 
-Удалить агент: `systemctl disable --now dozor-agent && rm /usr/local/bin/dozor-agent /etc/systemd/system/dozor-agent.service && rm -r /etc/dozor`.
+Удалить агент: `systemctl disable --now sentra-agent && rm /usr/local/bin/sentra-agent /etc/systemd/system/sentra-agent.service && rm -r /etc/sentra`.
 
 ## Статусы на обзоре
 
@@ -76,17 +76,17 @@ dozor-agent collect          # разово показать, что собир�
 
 ## Резервная копия
 
-Всё состояние лежит в двух томах Docker: `dozor-data` (настройки, пользователи, устройства, ключ сертификата) и `vm-data` (метрики). Ключ сертификата важно сохранить: если он сменится, агенты перестанут доверять коробке и их придётся подключать заново.
+Всё состояние лежит в двух томах Docker: `sentra-data` (настройки, пользователи, устройства, ключ сертификата) и `vm-data` (метрики). Ключ сертификата важно сохранить: если он сменится, агенты перестанут доверять коробке и их придётся подключать заново.
 
 ```bash
-docker run --rm -v dozor_dozor-data:/d -v $PWD:/b alpine tar czf /b/dozor-data.tgz -C /d .
+docker run --rm -v sentra_sentra-data:/d -v $PWD:/b alpine tar czf /b/sentra-data.tgz -C /d .
 ```
 
 ## Разработка
 
 ```
-cmd/dozor-server     точка входа сервера
-cmd/dozor-agent      точка входа агента
+cmd/sentra-server     точка входа сервера
+cmd/sentra-agent      точка входа агента
 internal/server      API, хранилище (SQLite), TLS, клиент VictoriaMetrics
 internal/agent       сбор метрик Linux из /proc, регистрация, отправка
 internal/proto       формат обмена агент ↔ сервер
@@ -99,10 +99,10 @@ web/                 интерфейс (React + Vite + uPlot), встраива
 
 | Переменная | По умолчанию | Назначение |
 | --- | --- | --- |
-| `DOZOR_LISTEN` | `:443` (в образе `:8443`) | Адрес и порт HTTPS |
-| `DOZOR_DATA` | `/var/lib/dozor` | База, сертификат, ключ |
-| `DOZOR_VM_URL` | `http://127.0.0.1:8428` | VictoriaMetrics |
-| `DOZOR_PUBLIC_URL` | из адресной строки | Адрес для команды подключения |
-| `DOZOR_CERT_HOSTS` | пусто | IP и имена в сертификате |
-| `DOZOR_AGENTS_DIR` | `/opt/dozor/agents` | Бинарники агентов для скачивания |
-| `DOZOR_ADMIN_PASSWORD` | случайный | Пароль admin при первом запуске |
+| `SENTRA_LISTEN` | `:443` (в образе `:8443`) | Адрес и порт HTTPS |
+| `SENTRA_DATA` | `/var/lib/sentra` | База, сертификат, ключ |
+| `SENTRA_VM_URL` | `http://127.0.0.1:8428` | VictoriaMetrics |
+| `SENTRA_PUBLIC_URL` | из адресной строки | Адрес для команды подключения |
+| `SENTRA_CERT_HOSTS` | пусто | IP и имена в сертификате |
+| `SENTRA_AGENTS_DIR` | `/opt/sentra/agents` | Бинарники агентов для скачивания |
+| `SENTRA_ADMIN_PASSWORD` | случайный | Пароль admin при первом запуске |

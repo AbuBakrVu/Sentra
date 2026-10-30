@@ -47,13 +47,13 @@ func createCert(certPath, keyPath string, hosts []string) error {
 	serial, _ := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 120))
 	tpl := &x509.Certificate{
 		SerialNumber:          serial,
-		Subject:               pkix.Name{CommonName: "dozor", Organization: []string{"Dozor monitoring"}},
+		Subject:               pkix.Name{CommonName: "sentra", Organization: []string{"Sentra monitoring"}},
 		NotBefore:             time.Now().Add(-time.Hour),
 		NotAfter:              time.Now().AddDate(10, 0, 0),
 		KeyUsage:              x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
-		DNSNames:              []string{"localhost", "dozor"},
+		DNSNames:              []string{"localhost", "sentra"},
 	}
 	for _, h := range hosts {
 		if ip := net.ParseIP(h); ip != nil {

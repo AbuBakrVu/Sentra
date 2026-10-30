@@ -9,7 +9,7 @@ const rangeList = [['1h', '1 час'], ['6h', '6 часов'], ['24h', 'Сутк
 export default function HostPage({ id }) {
   const [h, setH] = useState(null)
   const [error, setError] = useState(null)
-  const [range, setRange] = useState(() => sessionStorage.getItem('dozor.range') || '1h')
+  const [range, setRange] = useState(() => sessionStorage.getItem('sentra.range') || '1h')
   const [tick, setTick] = useState(0)
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState('')
@@ -22,7 +22,7 @@ export default function HostPage({ id }) {
     return () => { alive = false; clearInterval(t) }
   }, [id])
 
-  const pickRange = (r) => { setRange(r); try { sessionStorage.setItem('dozor.range', r) } catch { /* приватный режим */ } }
+  const pickRange = (r) => { setRange(r); try { sessionStorage.setItem('sentra.range', r) } catch { /* приватный режим */ } }
 
   async function saveName(e) {
     e.preventDefault()
