@@ -1,0 +1,34 @@
+# Коробка «Дозор»: docker compose up -d --build
+services:
+  victoriametrics:
+    image: victoriametrics/victoria-metrics:v1.106.1
+    command:
+      - -storageDataPath=/storage
+      - -retentionPeriod=90d
+      - -httpListenAddr=:8428
+    volumes:
+      - vm-data:/storage
+    restart: unless-stopped
+    # порт наружу не публикуем: доступ только у сервера Дозора
+
+  dozor:
+    build: .
+    image: dozor:0.1.0
+    depends_on:
+      - victoriametrics
+    ports:
+      - "443:8443"
+    environment:
+      # адрес, по которому агенты и браузер видят коробку (иначе берётся из адресной строки)
+      DOZOR_PUBLIC_URL: ${DOZOR_PUBLIC_URL:-}
+      # IP/имена в сертификате, через запятую
+      DOZOR_CERT_HOSTS: ${DOZOR_CERT_HOSTS:-}
+      DOZOR_ADMIN_PASSWORD: ${DOZOR_ADMIN_PASSWORD:-}
+      TZ: ${TZ:-Europe/Moscow}
+    volumes:
+      - dozor-data:/var/lib/dozor
+    restart: unless-stopped
+
+volumes:
+  vm-data:
+  dozor-data:
