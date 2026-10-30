@@ -6,22 +6,37 @@
 
 ## Установка коробки
 
-Нужен Linux-сервер или VM с Docker: 2 vCPU, 2 ГБ RAM, 20 ГБ диска.
+Нужен Linux-сервер или VM (Ubuntu, Debian, CentOS/Alma): 2 vCPU, 2 ГБ RAM, 20 ГБ диска, доступ в интернет на время установки. Docker скрипт поставит сам.
 
 ```bash
-# 1. Скопируйте папку проекта на сервер, затем:
-cd dozor
-cp .env.example .env
-nano .env                 # укажите IP коробки в DOZOR_PUBLIC_URL и DOZOR_CERT_HOSTS
-docker compose up -d --build
-
-# 2. Пароль администратора (если не задали в .env)
-docker compose logs dozor | grep пароль
+curl -fsSL https://raw.githubusercontent.com/AbuBakrVu/Sentra/main/install.sh | sudo bash
 ```
 
-Откройте `https://<IP коробки>`. Браузер предупредит о самоподписанном сертификате: это нормально для локальной сети, подтвердите исключение. Войдите как `admin` и смените пароль в разделе «Настройки».
+Скрипт скачает код в `/opt/sentra`, определит IP сервера, соберёт и запустит коробку. В конце он покажет адрес панели и пароль администратора.
+
+Если у сервера несколько адресов, укажите нужный явно:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/AbuBakrVu/Sentra/main/install.sh | sudo SENTRA_IP=192.168.1.10 bash
+```
+
+Откройте адрес из вывода скрипта. Браузер предупредит о самоподписанном сертификате: это нормально для локальной сети, подтвердите исключение. Войдите как `admin` и смените пароль в разделе «Настройки».
+
+**Обновление:** запустите ту же команду ещё раз. Настройки, устройства и история графиков сохранятся.
 
 Наружу коробка открывает только порт 443. VictoriaMetrics доступна только внутри Docker-сети.
+
+<details>
+<summary>Установка вручную</summary>
+
+```bash
+git clone https://github.com/AbuBakrVu/Sentra.git /opt/sentra
+cd /opt/sentra
+cp .env.example .env && nano .env     # IP коробки в DOZOR_PUBLIC_URL и DOZOR_CERT_HOSTS
+docker compose up -d --build
+docker compose logs dozor | grep пароль
+```
+</details>
 
 ## Подключение сервера
 
