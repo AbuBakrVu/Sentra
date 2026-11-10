@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { api } from '../api.js'
 import { Link } from '../App.jsx'
 import { useHosts } from './Overview.jsx'
+import { AddTabs } from './AddProxmox.jsx'
 
 export default function AddServer() {
   const [enroll, setEnroll] = useState(null)
@@ -41,6 +42,7 @@ export default function AddServer() {
     <div className="narrow">
       <h1 className="headline">Подключить сервер</h1>
       <p className="lead">Нужен Linux с systemd и доступ к этой панели по сети. Агент сам найдёт диски и сетевые интерфейсы, настраивать ничего не нужно. Windows-серверы появятся в следующей версии.</p>
+      <AddTabs current="server" />
 
       <ol className="steps">
         <li>

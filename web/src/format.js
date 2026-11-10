@@ -52,4 +52,5 @@ export const statusText = {
   critical: 'Авария',
   offline: 'Нет связи',
   waiting: 'Ждём данные',
+  stopped: 'Выключена',
 }

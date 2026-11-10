@@ -1,18 +1,21 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"sentra/internal/server"
 	"sentra/web"
 )
 
-var version = "0.1.0-dev"
+var version = "0.2.0-dev"
 
 func env(k, def string) string {
 	if v := os.Getenv(k); v != "" {
@@ -40,6 +43,9 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	s.StartPollers(ctx)
 	srv := &http.Server{
 		Addr:              cfg.Listen,
 		Handler:           s.Handler(),
@@ -50,5 +56,14 @@ func main() {
 		IdleTimeout:       120 * time.Second,
 	}
 	log.Printf("Sentra %s слушает %s, отпечаток ключа sha256//%s", version, cfg.Listen, s.Pin())
-	log.Fatal(srv.ListenAndServeTLS("", ""))
+	go func() {
+		<-ctx.Done() // SIGTERM от docker stop: дорабатываем текущие запросы и выходим
+		sctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		srv.Shutdown(sctx)
+	}()
+	if err := srv.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
+		log.Fatal(err)
+	}
+	log.Print("Sentra остановлена")
 }

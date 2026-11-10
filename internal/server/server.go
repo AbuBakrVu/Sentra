@@ -41,6 +41,7 @@ type Server struct {
 	web        fs.FS
 	loginMu    sync.Mutex
 	loginFails map[string][]time.Time
+	pve        *pvePoller
 }
 
 const offlineAfter = 3 * time.Minute
@@ -69,7 +70,7 @@ func New(cfg Config, web fs.FS) (*Server, *tls.Certificate, error) {
 		os.WriteFile(pf, []byte(pw+"\n"), 0o600)
 		log.Printf("Создан администратор: логин admin, пароль %s (сохранён в %s). Смените его после входа.", pw, pf)
 	}
-	s := &Server{cfg: cfg, st: st, vm: NewVM(cfg.VMURL), pin: pin, web: web, loginFails: map[string][]time.Time{}}
+	s := &Server{cfg: cfg, st: st, vm: NewVM(cfg.VMURL), pin: pin, web: web, loginFails: map[string][]time.Time{}, pve: newPVEPoller()}
 	return s, &cert, nil
 }
 
@@ -93,6 +94,10 @@ func (s *Server) Handler() http.Handler {
 	m.HandleFunc("DELETE /api/hosts/{id}", s.auth(s.deleteHost))
 	m.HandleFunc("GET /api/hosts/{id}/chart", s.auth(s.chart))
 	m.HandleFunc("POST /api/enroll", s.auth(s.newEnroll))
+	m.HandleFunc("GET /api/pve", s.auth(s.listPVE))
+	m.HandleFunc("POST /api/pve", s.auth(s.addPVE))
+	m.HandleFunc("DELETE /api/pve/{id}", s.auth(s.deletePVE))
+	m.HandleFunc("POST /api/pve/{id}/trust", s.auth(s.trustPVE))
 	m.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"ok": true, "version": s.cfg.Version})
 	})
@@ -413,7 +418,7 @@ func (s *Server) download(w http.ResponseWriter, r *http.Request) {
 type hostView struct {
 	*Host
 	Online bool     `json:"online"`
-	Status string   `json:"status"` // ok, warning, critical, offline, waiting
+	Status string   `json:"status"` // ok, warning, critical, offline, waiting, stopped
 	Issues []string `json:"issues"`
 }
 
@@ -424,10 +429,38 @@ func view(h *Host) hostView {
 		return v
 	}
 	v.Online = time.Since(time.Unix(h.LastSeen, 0)) < offlineAfter
+	pve := strings.HasPrefix(h.Kind, "pve-")
+	if gone, _ := h.Meta["gone"].(float64); pve && gone == 1 {
+		v.Online = false
+		v.Status = "offline"
+		v.Issues = append(v.Issues, "Нет в Proxmox: машину удалили или перенесли в другой кластер")
+		return v
+	}
 	if !v.Online {
 		v.Status = "offline"
-		v.Issues = append(v.Issues, "Нет данных от агента")
+		if pve {
+			v.Issues = append(v.Issues, "Нет данных от Proxmox")
+		} else {
+			v.Issues = append(v.Issues, "Нет данных от агента")
+		}
 		return v
+	}
+	if pve {
+		st, _ := h.Meta["status"].(string)
+		switch {
+		case h.Kind == "pve-node" && st != "online":
+			v.Online = false
+			v.Status = "critical"
+			v.Issues = append(v.Issues, "Узел не в сети кластера")
+			return v
+		case h.Meta["node_offline"] == true:
+			v.Status = "critical"
+			v.Issues = append(v.Issues, "Узел Proxmox не в сети")
+			return v
+		case h.Kind != "pve-node" && st != "running":
+			v.Status = "stopped"
+			return v
+		}
 	}
 	// стартовые пороги из ТЗ; настраиваемый движок появится на этапе 2
 	v.Status = "ok"
@@ -495,6 +528,12 @@ func (s *Server) renameHost(w http.ResponseWriter, r *http.Request, _ *User) {
 }
 
 func (s *Server) deleteHost(w http.ResponseWriter, r *http.Request, _ *User) {
+	if h, err := s.st.Host(r.PathValue("id")); err == nil && strings.HasPrefix(h.Kind, "pve-") {
+		if gone, _ := h.Meta["gone"].(float64); gone != 1 {
+			httpErr(w, 400, "машина есть в Proxmox и вернётся при следующем опросе. Удалите её в Proxmox или отключите весь Proxmox в разделе «Добавить»")
+			return
+		}
+	}
 	if err := s.st.DeleteHost(r.PathValue("id")); err != nil {
 		httpErr(w, 500, err.Error())
 		return
@@ -557,8 +596,8 @@ func (s *Server) chart(w http.ResponseWriter, r *http.Request, _ *User) {
 	case "net":
 		unit = "B/s"
 		qs = []chartQuery{
-			{proto.MNetRx, func(l map[string]string) string { return l["iface"] + " приём" }},
-			{proto.MNetTx, func(l map[string]string) string { return l["iface"] + " передача" }},
+			{proto.MNetRx, func(l map[string]string) string { return strings.TrimSpace(l["iface"] + " приём") }},
+			{proto.MNetTx, func(l map[string]string) string { return strings.TrimSpace(l["iface"] + " передача") }},
 		}
 	default:
 		httpErr(w, 400, "неизвестный график")

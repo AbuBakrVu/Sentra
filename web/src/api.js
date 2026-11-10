@@ -37,4 +37,8 @@ export const api = {
   remove: (id) => call('DELETE', `/api/hosts/${id}`),
   chart: (id, m, range) => call('GET', `/api/hosts/${id}/chart?m=${m}&range=${range}`),
   enroll: () => call('POST', '/api/enroll'),
+  pveList: () => call('GET', '/api/pve'),
+  pveAdd: (body) => call('POST', '/api/pve', body),
+  pveDelete: (id) => call('DELETE', `/api/pve/${id}`),
+  pveTrust: (id) => call('POST', `/api/pve/${id}/trust`),
 }

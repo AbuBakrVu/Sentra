@@ -13,7 +13,7 @@ services:
 
   sentra:
     build: .
-    image: sentra:0.1.0
+    image: sentra:0.2.0
     depends_on:
       - victoriametrics
     ports:

@@ -16,7 +16,7 @@ COPY cmd/ cmd/
 COPY internal/ internal/
 COPY web/embed.go web/embed.go
 COPY --from=web /src/web/dist web/dist
-ARG VERSION=0.1.0
+ARG VERSION=0.2.0
 # агенты собираем без cgo, под обе архитектуры
 RUN for a in amd64 arm64; do \
       CGO_ENABLED=0 GOOS=linux GOARCH=$a go build -mod=vendor -trimpath \

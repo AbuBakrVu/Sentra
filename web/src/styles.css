@@ -113,8 +113,8 @@ code { font-family: ui-monospace, 'SF Mono', Consolas, monospace; font-size: 0.9
 .meter-value { text-align: right; font-weight: 500; }
 
 /* ---------- карточка хоста ---------- */
-.facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; margin: 0 0 28px; }
-.facts > div { background: var(--surface); padding: 10px 14px; }
+.facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; margin: 0 0 28px; }
+.facts > div { padding: 10px 14px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); margin: 0 -1px -1px 0; }
 .facts dt { font-size: 13px; color: var(--ink-2); }
 .facts dd { margin: 2px 0 0; font-weight: 500; overflow-wrap: anywhere; }
 .rename { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
@@ -176,3 +176,44 @@ code { font-family: ui-monospace, 'SF Mono', Consolas, monospace; font-size: 0.9
   .charts { grid-template-columns: 1fr; }
   .cmd { flex-direction: column; }
 }
+
+/* ---------- Proxmox и группы на обзоре ---------- */
+.group { margin-bottom: 28px; }
+.group-head { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin: 0 0 10px; }
+.group-head h2 { margin: 0; font-size: 19px; font-weight: 600; }
+.group-head p { margin: 0; color: var(--ink-2); font-size: 14px; }
+.tile.s-stopped { border-left-color: var(--off); background: #FAFBFC; }
+.tile.s-stopped .tile-name { color: var(--ink-2); }
+.badge.s-stopped { color: #55606C; background: var(--off-bg); }
+.meter-hint { grid-column: 2 / 4; color: var(--ink-2); font-size: 12px; }
+.row-btns { display: flex; gap: 10px; flex-wrap: wrap; }
+
+.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin: 24px 0 8px; flex-wrap: wrap; }
+.tab { padding: 10px 16px; text-decoration: none; color: var(--ink-2); border-bottom: 3px solid transparent; margin-bottom: -1px; }
+.tab:hover { color: var(--ink); }
+.tab.active { color: var(--ink); border-bottom-color: var(--night); font-weight: 600; }
+
+.wide-form { max-width: 560px; }
+.form .help { padding: 10px 14px; }
+.form .help label { margin-top: 8px; }
+.banner.info { background: #E8ECFA; color: var(--night); margin-bottom: 16px; }
+
+.sources { margin: 8px 0 28px; }
+.sources h2 { font-size: 18px; margin: 0 0 10px; }
+.src-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.src { display: flex; gap: 16px; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; background: var(--surface); border: 1px solid var(--line); border-left: 5px solid var(--ok); border-radius: var(--radius); padding: 12px 16px; }
+.src.failing { border-left-color: var(--crit); }
+.src-name { font-weight: 600; }
+.src-main p { margin: 6px 0 0; }
+.src-err { color: var(--crit); font-size: 14px; }
+.src-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.storages { margin: 0 0 24px; }
+.storages h2 { font-size: 17px; margin: 0 0 10px; }
+.tbl-box { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow-x: auto; }
+.tbl-box table { border-collapse: collapse; width: 100%; font-size: 14px; min-width: 560px; }
+.tbl-box th { text-align: left; font-weight: 500; color: var(--ink-2); font-size: 13px; padding: 9px 14px; border-bottom: 1px solid var(--line); }
+.tbl-box td { padding: 9px 14px; border-bottom: 1px solid var(--line-soft); white-space: nowrap; }
+.tbl-box tr:last-child td { border-bottom: 0; }
+.tbl-box .num { text-align: right; }
+.meter-track.inline { display: inline-block; width: 120px; vertical-align: middle; margin-right: 8px; }

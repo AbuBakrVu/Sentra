@@ -3,6 +3,7 @@ import { api } from './api.js'
 import Overview from './pages/Overview.jsx'
 import HostPage from './pages/HostPage.jsx'
 import AddServer from './pages/AddServer.jsx'
+import AddProxmox from './pages/AddProxmox.jsx'
 import Settings from './pages/Settings.jsx'
 import Login from './pages/Login.jsx'
 
@@ -58,12 +59,14 @@ export default function App() {
   const host = path.match(/^\/hosts\/([a-z0-9_-]+)$/)
   if (host) page = <HostPage id={host[1]} />
   else if (path === '/add') page = <AddServer />
+  else if (path === '/add/proxmox') page = <AddProxmox />
   else if (path === '/settings') page = <Settings />
   else page = <Overview />
 
-  const tab = (to, label) => (
-    <Link to={to} className={path === to ? 'nav-link active' : 'nav-link'} aria-current={path === to ? 'page' : undefined}>{label}</Link>
-  )
+  const tab = (to, label) => {
+    const on = to === '/' ? path === '/' || path.startsWith('/hosts/') : path === to || path.startsWith(to + '/')
+    return <Link to={to} className={on ? 'nav-link active' : 'nav-link'} aria-current={on ? 'page' : undefined}>{label}</Link>
+  }
 
   return (
     <div className="shell">
@@ -75,7 +78,7 @@ export default function App() {
           </Link>
           <nav className="nav">
             {tab('/', 'Обзор')}
-            {tab('/add', 'Добавить сервер')}
+            {tab('/add', 'Добавить')}
             {tab('/settings', 'Настройки')}
           </nav>
           <div className="who">

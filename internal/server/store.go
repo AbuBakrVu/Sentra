@@ -51,7 +51,53 @@ CREATE TABLE IF NOT EXISTS hosts (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS hosts_machine ON hosts(tenant_id, machine_id);
+CREATE TABLE IF NOT EXISTS pve_sources (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  name TEXT NOT NULL,
+  url TEXT NOT NULL,
+  token_id TEXT NOT NULL,
+  secret TEXT NOT NULL,
+  fingerprint TEXT NOT NULL DEFAULT '',
+  last_ok INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT NOT NULL DEFAULT '',
+  summary TEXT NOT NULL DEFAULT '{}',
+  created_at INTEGER NOT NULL
+);
 `
+
+// миграции колонок: SQLite не умеет ADD COLUMN IF NOT EXISTS
+var hostColumns = []struct{ name, def string }{
+	{"kind", "TEXT NOT NULL DEFAULT 'agent'"}, // agent, pve-node, pve-qemu, pve-lxc
+	{"source_id", "TEXT NOT NULL DEFAULT ''"}, // id подключения Proxmox
+	{"ext_id", "TEXT NOT NULL DEFAULT ''"},    // qemu/100, node/pve1
+	{"meta", "TEXT NOT NULL DEFAULT '{}'"},    // данные из Proxmox: узел, vmid, статус
+}
+
+func migrate(db *sql.DB) error {
+	have := map[string]bool{}
+	rows, err := db.Query(`PRAGMA table_info(hosts)`)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var cid, notnull, pk int
+		var name, typ string
+		var dflt sql.NullString
+		rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk)
+		have[name] = true
+	}
+	rows.Close()
+	for _, c := range hostColumns {
+		if !have[c.name] {
+			if _, err := db.Exec(`ALTER TABLE hosts ADD COLUMN ` + c.name + ` ` + c.def); err != nil {
+				return err
+			}
+		}
+	}
+	_, err = db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS hosts_ext ON hosts(source_id, ext_id) WHERE source_id != ''`)
+	return err
+}
 
 func OpenStore(path string) (*Store, error) {
 	db, err := sql.Open("sqlite3", "file:"+path+"?_journal_mode=WAL&_busy_timeout=5000&_foreign_keys=on")
@@ -60,6 +106,9 @@ func OpenStore(path string) (*Store, error) {
 	}
 	db.SetMaxOpenConns(1) // SQLite: один писатель, без гонок
 	if _, err := db.Exec(schema); err != nil {
+		return nil, err
+	}
+	if err := migrate(db); err != nil {
 		return nil, err
 	}
 	return &Store{db: db}, nil
@@ -198,7 +247,9 @@ type Host struct {
 	LastSeen    int64           `json:"last_seen"`
 	LastMetrics map[string]any  `json:"last_metrics"`
 	CreatedAt   int64           `json:"created_at"`
-	keyHash     string
+	Kind        string          `json:"kind"`
+	SourceID    string          `json:"source_id,omitempty"`
+	Meta        map[string]any  `json:"meta"`
 }
 
 // RegisterHost создаёт хост или перевыпускает ключ существующему (по machine-id).
@@ -224,7 +275,7 @@ func (s *Store) RegisterHost(inv proto.Inventory) (id, key string, err error) {
 
 func (s *Store) CheckHostKey(id, key string) bool {
 	var h string
-	if err := s.db.QueryRow(`SELECT key_hash FROM hosts WHERE id=?`, id).Scan(&h); err != nil {
+	if err := s.db.QueryRow(`SELECT key_hash FROM hosts WHERE id=? AND kind='agent'`, id).Scan(&h); err != nil {
 		return false
 	}
 	return subtle.ConstantTimeCompare([]byte(h), []byte(sha(key))) == 1
@@ -244,18 +295,23 @@ func (s *Store) TouchHost(id string, ts int64, last map[string]any, inv *proto.I
 func scanHost(sc interface{ Scan(...any) error }) (*Host, error) {
 	var h Host
 	var inv, lm string
-	if err := sc.Scan(&h.ID, &h.Name, &inv, &h.LastSeen, &lm, &h.CreatedAt); err != nil {
+	var meta string
+	if err := sc.Scan(&h.ID, &h.Name, &inv, &h.LastSeen, &lm, &h.CreatedAt, &h.Kind, &h.SourceID, &meta); err != nil {
 		return nil, err
 	}
 	json.Unmarshal([]byte(inv), &h.Inventory)
 	json.Unmarshal([]byte(lm), &h.LastMetrics)
+	json.Unmarshal([]byte(meta), &h.Meta)
+	if h.Meta == nil {
+		h.Meta = map[string]any{}
+	}
 	return &h, nil
 }
 
-const hostCols = `id, name, inventory, last_seen, last_metrics, created_at`
+const hostCols = `id, name, inventory, last_seen, last_metrics, created_at, kind, source_id, meta`
 
 func (s *Store) Hosts() ([]*Host, error) {
-	rows, err := s.db.Query(`SELECT ` + hostCols + ` FROM hosts ORDER BY name`)
+	rows, err := s.db.Query(`SELECT ` + hostCols + ` FROM hosts ORDER BY name COLLATE NOCASE`)
 	if err != nil {
 		return nil, err
 	}
@@ -283,4 +339,132 @@ func (s *Store) RenameHost(id, name string) error {
 func (s *Store) DeleteHost(id string) error {
 	_, err := s.db.Exec(`DELETE FROM hosts WHERE id=?`, id)
 	return err
+}
+
+// ---------- Proxmox ----------
+
+type PVESource struct {
+	ID          string         `json:"id"`
+	Name        string         `json:"name"`
+	URL         string         `json:"url"`
+	TokenID     string         `json:"token_id"`
+	Secret      string         `json:"-"`
+	Fingerprint string         `json:"fingerprint"`
+	LastOK      int64          `json:"last_ok"`
+	LastError   string         `json:"last_error"`
+	Summary     map[string]any `json:"summary"`
+	CreatedAt   int64          `json:"created_at"`
+}
+
+const pveCols = `id, name, url, token_id, secret, fingerprint, last_ok, last_error, summary, created_at`
+
+func scanPVE(sc interface{ Scan(...any) error }) (*PVESource, error) {
+	var p PVESource
+	var sum string
+	if err := sc.Scan(&p.ID, &p.Name, &p.URL, &p.TokenID, &p.Secret, &p.Fingerprint, &p.LastOK, &p.LastError, &sum, &p.CreatedAt); err != nil {
+		return nil, err
+	}
+	json.Unmarshal([]byte(sum), &p.Summary)
+	return &p, nil
+}
+
+func (s *Store) AddPVE(name, url, tokenID, secret, fp string) (string, error) {
+	id := "pve" + strings.ToLower(randToken(6))
+	_, err := s.db.Exec(`INSERT INTO pve_sources(id, name, url, token_id, secret, fingerprint, created_at) VALUES(?,?,?,?,?,?,?)`,
+		id, name, url, tokenID, secret, fp, time.Now().Unix())
+	return id, err
+}
+
+func (s *Store) PVESources() ([]*PVESource, error) {
+	rows, err := s.db.Query(`SELECT ` + pveCols + ` FROM pve_sources ORDER BY name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []*PVESource{}
+	for rows.Next() {
+		p, err := scanPVE(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) PVESource(id string) (*PVESource, error) {
+	return scanPVE(s.db.QueryRow(`SELECT `+pveCols+` FROM pve_sources WHERE id=?`, id))
+}
+
+func (s *Store) PVEResult(id string, ok bool, errText string, summary map[string]any) {
+	if ok {
+		sj, _ := json.Marshal(summary)
+		s.db.Exec(`UPDATE pve_sources SET last_ok=?, last_error='', summary=? WHERE id=?`, time.Now().Unix(), string(sj), id)
+		return
+	}
+	s.db.Exec(`UPDATE pve_sources SET last_error=? WHERE id=?`, errText, id)
+}
+
+func (s *Store) SetPVEFingerprint(id, fp string) error {
+	_, err := s.db.Exec(`UPDATE pve_sources SET fingerprint=?, last_error='' WHERE id=?`, fp, id)
+	return err
+}
+
+// DeletePVE удаляет подключение вместе с его узлами и машинами.
+func (s *Store) DeletePVE(id string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	tx.Exec(`DELETE FROM hosts WHERE source_id=?`, id)
+	tx.Exec(`DELETE FROM pve_sources WHERE id=?`, id)
+	return tx.Commit()
+}
+
+// UpsertPVEHost создаёт или обновляет узел/машину Proxmox. Имя, которое
+// пользователь поменял в панели, не перетирается: обновляем его, только пока
+// оно совпадает с прежним именем из Proxmox.
+func (s *Store) UpsertPVEHost(sourceID, extID, kind, name string, ts int64, last, meta map[string]any) (string, error) {
+	lm, _ := json.Marshal(last)
+	mj, _ := json.Marshal(meta)
+	var id, oldMeta, curName string
+	err := s.db.QueryRow(`SELECT id, meta, name FROM hosts WHERE source_id=? AND ext_id=?`, sourceID, extID).Scan(&id, &oldMeta, &curName)
+	if err == sql.ErrNoRows {
+		id = strings.ToLower(randToken(9))
+		_, err = s.db.Exec(`INSERT INTO hosts(id, name, key_hash, kind, source_id, ext_id, meta, last_seen, last_metrics, created_at)
+			VALUES(?,?,?,?,?,?,?,?,?,?)`, id, name, "-", kind, sourceID, extID, string(mj), ts, string(lm), time.Now().Unix())
+		return id, err
+	}
+	if err != nil {
+		return "", err
+	}
+	var om map[string]any
+	json.Unmarshal([]byte(oldMeta), &om)
+	if prev, _ := om["pve_name"].(string); prev == curName && name != "" {
+		curName = name
+	}
+	_, err = s.db.Exec(`UPDATE hosts SET name=?, kind=?, meta=?, last_seen=?, last_metrics=? WHERE id=?`,
+		curName, kind, string(mj), ts, string(lm), id)
+	return id, err
+}
+
+// PVEHostIDs — ext_id → id для всех хостов подключения.
+func (s *Store) PVEHostIDs(sourceID string) map[string]string {
+	out := map[string]string{}
+	rows, err := s.db.Query(`SELECT ext_id, id FROM hosts WHERE source_id=?`, sourceID)
+	if err != nil {
+		return out
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var e, i string
+		rows.Scan(&e, &i)
+		out[e] = i
+	}
+	return out
+}
+
+// MarkPVEGone помечает машины, которых больше нет в Proxmox.
+func (s *Store) MarkPVEGone(id string) {
+	s.db.Exec(`UPDATE hosts SET meta=json_set(meta, '$.gone', 1) WHERE id=?`, id)
 }
