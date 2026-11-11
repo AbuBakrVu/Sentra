@@ -6,6 +6,7 @@ import AddServer from './pages/AddServer.jsx'
 import AddProxmox from './pages/AddProxmox.jsx'
 import Settings from './pages/Settings.jsx'
 import Login from './pages/Login.jsx'
+import Problems from './pages/Problems.jsx'
 
 // Минимальный роутер на History API: нам хватает четырёх экранов.
 export function navigate(to) {
@@ -61,6 +62,7 @@ export default function App() {
   else if (path === '/add') page = <AddServer />
   else if (path === '/add/proxmox') page = <AddProxmox />
   else if (path === '/settings') page = <Settings />
+  else if (path === '/problems') page = <Problems />
   else page = <Overview />
 
   const tab = (to, label) => {
@@ -78,6 +80,7 @@ export default function App() {
           </Link>
           <nav className="nav">
             {tab('/', 'Обзор')}
+            {tab('/problems', 'Проблемы')}
             {tab('/add', 'Добавить')}
             {tab('/settings', 'Настройки')}
           </nav>

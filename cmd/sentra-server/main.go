@@ -15,7 +15,7 @@ import (
 	"sentra/web"
 )
 
-var version = "0.2.0-dev"
+var version = "0.3.0-dev"
 
 func env(k, def string) string {
 	if v := os.Getenv(k); v != "" {
@@ -46,6 +46,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	s.StartPollers(ctx)
+	s.StartEngine(ctx.Done())
 	srv := &http.Server{
 		Addr:              cfg.Listen,
 		Handler:           s.Handler(),

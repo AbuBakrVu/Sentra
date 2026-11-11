@@ -68,10 +68,12 @@ CREATE TABLE IF NOT EXISTS pve_sources (
 
 // миграции колонок: SQLite не умеет ADD COLUMN IF NOT EXISTS
 var hostColumns = []struct{ name, def string }{
-	{"kind", "TEXT NOT NULL DEFAULT 'agent'"}, // agent, pve-node, pve-qemu, pve-lxc
-	{"source_id", "TEXT NOT NULL DEFAULT ''"}, // id подключения Proxmox
-	{"ext_id", "TEXT NOT NULL DEFAULT ''"},    // qemu/100, node/pve1
-	{"meta", "TEXT NOT NULL DEFAULT '{}'"},    // данные из Proxmox: узел, vmid, статус
+	{"kind", "TEXT NOT NULL DEFAULT 'agent'"},     // agent, pve-node, pve-qemu, pve-lxc
+	{"source_id", "TEXT NOT NULL DEFAULT ''"},     // id подключения Proxmox
+	{"ext_id", "TEXT NOT NULL DEFAULT ''"},        // qemu/100, node/pve1
+	{"meta", "TEXT NOT NULL DEFAULT '{}'"},        // данные из Proxmox: узел, vmid, статус
+	{"maint_until", "INTEGER NOT NULL DEFAULT 0"}, // режим обслуживания до (unix)
+	{"maint_comment", "TEXT NOT NULL DEFAULT ''"}, // кто и зачем включил
 }
 
 func migrate(db *sql.DB) error {
@@ -109,6 +111,9 @@ func OpenStore(path string) (*Store, error) {
 		return nil, err
 	}
 	if err := migrate(db); err != nil {
+		return nil, err
+	}
+	if _, err := db.Exec(problemsSchema); err != nil {
 		return nil, err
 	}
 	return &Store{db: db}, nil
@@ -250,6 +255,8 @@ type Host struct {
 	Kind        string          `json:"kind"`
 	SourceID    string          `json:"source_id,omitempty"`
 	Meta        map[string]any  `json:"meta"`
+	MaintUntil  int64           `json:"maint_until"`
+	MaintNote   string          `json:"maint_comment"`
 }
 
 // RegisterHost создаёт хост или перевыпускает ключ существующему (по machine-id).
@@ -296,7 +303,7 @@ func scanHost(sc interface{ Scan(...any) error }) (*Host, error) {
 	var h Host
 	var inv, lm string
 	var meta string
-	if err := sc.Scan(&h.ID, &h.Name, &inv, &h.LastSeen, &lm, &h.CreatedAt, &h.Kind, &h.SourceID, &meta); err != nil {
+	if err := sc.Scan(&h.ID, &h.Name, &inv, &h.LastSeen, &lm, &h.CreatedAt, &h.Kind, &h.SourceID, &meta, &h.MaintUntil, &h.MaintNote); err != nil {
 		return nil, err
 	}
 	json.Unmarshal([]byte(inv), &h.Inventory)
@@ -308,7 +315,7 @@ func scanHost(sc interface{ Scan(...any) error }) (*Host, error) {
 	return &h, nil
 }
 
-const hostCols = `id, name, inventory, last_seen, last_metrics, created_at, kind, source_id, meta`
+const hostCols = `id, name, inventory, last_seen, last_metrics, created_at, kind, source_id, meta, maint_until, maint_comment`
 
 func (s *Store) Hosts() ([]*Host, error) {
 	rows, err := s.db.Query(`SELECT ` + hostCols + ` FROM hosts ORDER BY name COLLATE NOCASE`)
@@ -338,6 +345,9 @@ func (s *Store) RenameHost(id, name string) error {
 
 func (s *Store) DeleteHost(id string) error {
 	_, err := s.db.Exec(`DELETE FROM hosts WHERE id=?`, id)
+	if err == nil {
+		s.db.Exec(`DELETE FROM problems WHERE host_id=?`, id)
+	}
 	return err
 }
 
@@ -416,6 +426,7 @@ func (s *Store) DeletePVE(id string) error {
 	if err != nil {
 		return err
 	}
+	tx.Exec(`DELETE FROM problems WHERE host_id IN (SELECT id FROM hosts WHERE source_id=?)`, id)
 	tx.Exec(`DELETE FROM hosts WHERE source_id=?`, id)
 	tx.Exec(`DELETE FROM pve_sources WHERE id=?`, id)
 	return tx.Commit()

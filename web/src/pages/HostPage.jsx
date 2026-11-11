@@ -4,6 +4,8 @@ import { Link, navigate } from '../App.jsx'
 import Chart from '../Chart.jsx'
 import { ago, bitrate, bytes, duration, pct, statusText } from '../format.js'
 import { isPVE } from './Overview.jsx'
+import AvailabilityBar from '../Availability.jsx'
+import { ProblemRows } from './Problems.jsx'
 
 const rangeList = [['1h', '1 час'], ['6h', '6 часов'], ['24h', 'Сутки'], ['7d', 'Неделя'], ['30d', 'Месяц']]
 
@@ -14,10 +16,16 @@ export default function HostPage({ id }) {
   const [tick, setTick] = useState(0)
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState('')
+  const [history, setHistory] = useState([])
+  const [maintOpen, setMaintOpen] = useState(false)
+  const [maintNote, setMaintNote] = useState('')
 
   useEffect(() => {
     let alive = true
-    const load = () => api.host(id).then((x) => alive && (setH(x), setError(null))).catch((e) => alive && setError(e.message))
+    const load = () => {
+      api.host(id).then((x) => alive && (setH(x), setError(null))).catch((e) => alive && setError(e.message))
+      api.problems('all', 30, id).then((l) => alive && setHistory(l)).catch(() => {})
+    }
     load()
     const t = setInterval(() => { load(); setTick((n) => n + 1) }, 30000)
     return () => { alive = false; clearInterval(t) }
@@ -32,6 +40,19 @@ export default function HostPage({ id }) {
       setH({ ...h, name: name.trim() })
       setEditing(false)
     } catch (err) { alert(err.message) }
+  }
+
+  async function maint(minutes) {
+    try {
+      const r = await api.maintenance(id, minutes, maintNote)
+      setH({ ...h, maint_until: r.maint_until, maint_comment: r.maint_comment, maintenance: minutes > 0 })
+      setMaintOpen(false); setMaintNote('')
+    } catch (err) { alert(err.message) }
+  }
+
+  const reload = () => {
+    api.host(id).then(setH).catch(() => {})
+    api.problems('all', 30, id).then(setHistory).catch(() => {})
   }
 
   async function remove() {
@@ -94,6 +115,39 @@ export default function HostPage({ id }) {
           {h.issues.length > 0 && <span> {h.issues.join(', ')}</span>}
         </p>
       </div>
+
+      <section className="host-av" aria-labelledby="av-h">
+        <div className="host-av-head">
+          <h2 id="av-h">Доступность за 30 дней</h2>
+          {h.maintenance ? (
+            <span className="maint-on">
+              Обслуживание до {new Date(h.maint_until * 1000).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+              {h.maint_comment && <span className="muted"> ({h.maint_comment})</span>}
+              <button className="link-btn" type="button" onClick={() => maint(0)}>Завершить</button>
+            </span>
+          ) : maintOpen ? (
+            <span className="maint-form">
+              <label className="sr-only" htmlFor="mn">Причина</label>
+              <input id="mn" value={maintNote} onChange={(e) => setMaintNote(e.target.value)} placeholder="Причина, например замена диска" maxLength={200} />
+              <button className="btn small-btn" type="button" onClick={() => maint(60)}>1 час</button>
+              <button className="btn small-btn" type="button" onClick={() => maint(240)}>4 часа</button>
+              <button className="btn small-btn" type="button" onClick={() => maint(24 * 60)}>Сутки</button>
+              <button className="link-btn" type="button" onClick={() => setMaintOpen(false)}>Отмена</button>
+            </span>
+          ) : (
+            <button className="btn small-btn" type="button" onClick={() => setMaintOpen(true)} title="Пока идут работы, новые проблемы не заводятся">Режим обслуживания</button>
+          )}
+        </div>
+        <AvailabilityBar av={h.availability} />
+      </section>
+
+      {history.length > 0 && (
+        <section className="host-probs" aria-labelledby="hp-h">
+          <h2 id="hp-h">Проблемы за 30 дней</h2>
+          <ProblemRows list={history.slice(0, 10)} showHost={false} onChange={reload} />
+          {history.length > 10 && <p className="muted small"><Link to="/problems">Все проблемы</Link></p>}
+        </section>
+      )}
 
       <dl className="facts">
         {facts.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}

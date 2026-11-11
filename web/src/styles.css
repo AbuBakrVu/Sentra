@@ -217,3 +217,69 @@ code { font-family: ui-monospace, 'SF Mono', Consolas, monospace; font-size: 0.9
 .tbl-box tr:last-child td { border-bottom: 0; }
 .tbl-box .num { text-align: right; }
 .meter-track.inline { display: inline-block; width: 120px; vertical-align: middle; margin-right: 8px; }
+
+/* ---------- журнал проблем и доступность ---------- */
+.ov-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+.ov-head .summary { flex: 1 1 520px; }
+.nowrap { white-space: nowrap; }
+.probs { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); margin: 0 0 18px; }
+.prob { display: grid; grid-template-columns: 96px 1fr auto auto; gap: 12px; align-items: center; padding: 10px 16px; border-top: 1px solid var(--line-soft); font-size: 14px; }
+.prob:first-child { border-top: 0; }
+.prob .badge { justify-self: start; }
+.prob.more { display: block; }
+.tile-issues.warn { color: var(--warn); }
+.tile-maint { margin: 8px 0 0; font-size: 12.5px; color: var(--night); font-weight: 500; }
+.tile-av { margin-top: 12px; }
+.tile { display: flex; flex-direction: column; }
+.tile .tile-av { margin-top: auto; padding-top: 12px; }
+.badge.s-maintenance { color: var(--night); background: #E8ECFA; }
+
+.av-cells { display: flex; gap: 2px; }
+.av-cell { flex: 1; height: 16px; border-radius: 2px; background: #52B788; min-width: 3px; }
+.av-compact .av-cell { height: 14px; gap: 1.5px; }
+.av-warn { background: #E0B341; }
+.av-down { background: #E0584C; }
+.av-off { background: #D3D9E0; }
+.av-none { background: #EEF1F4; outline: 1px dashed #D6DDE5; outline-offset: -1px; }
+.av-labels { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--ink-2); margin-top: 4px; }
+.av-labels b { color: var(--ink); font-size: 12.5px; font-weight: 600; }
+.av-labels b.lo, .pct.lo { color: var(--warn); }
+.av-labels b.bad, .pct.bad { color: var(--crit); }
+.av-legend { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 12.5px; color: var(--ink-2); margin: 8px 0 0; }
+.av-legend .av-cell { display: inline-block; width: 12px; height: 12px; vertical-align: -2px; margin-right: 6px; flex: none; }
+
+.ov-table table { min-width: 1000px; table-layout: fixed; }
+.ov-table td { overflow: hidden; text-overflow: ellipsis; }
+.ov-table .grp-th { color: var(--ink); font-size: 14px; font-weight: 600; }
+.ov-table .nm { font-weight: 600; color: var(--ink); text-decoration: none; }
+.ov-table .nm:hover { text-decoration: underline; }
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--ok); margin-right: 8px; vertical-align: 0; }
+.dot.s-warning { background: var(--warn); } .dot.s-critical, .dot.s-offline { background: var(--crit); } .dot.s-stopped, .dot.s-waiting { background: #A7B0BB; }
+.row-critical td, .row-offline td { background: #FFF6F5; }
+.row-warning td { background: #FFFBF0; }
+.row-stopped td { color: #7A8592; }
+.now-critical, .now-offline { color: var(--crit); font-weight: 600; }
+.now-warning { color: var(--warn); font-weight: 500; }
+.hot { color: var(--warn); font-weight: 600; }
+.pct { font-weight: 600; }
+.maint-chip { margin-left: 8px; font-size: 11.5px; color: var(--night); background: #E8ECFA; border-radius: 999px; padding: 1px 7px; font-weight: 500; }
+
+.host-av { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; margin: 0 0 20px; }
+.host-av-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.host-av h2, .host-probs h2 { margin: 0; font-size: 16px; font-weight: 600; }
+.host-probs { margin: 0 0 24px; }
+.host-probs h2 { margin-bottom: 10px; }
+.maint-on { font-size: 14px; color: var(--night); font-weight: 500; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.maint-form { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.maint-form input, .ack-form input { font: inherit; font-size: 13.5px; padding: 6px 9px; border: 1px solid var(--line); border-radius: var(--radius); min-width: 220px; }
+.small-btn { font-size: 13.5px; padding: 5px 12px; }
+.ack-form { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.acked { font-size: 13px; color: var(--night); }
+.prob-table { min-width: 860px; }
+.prob-table td.wrap { white-space: normal; }
+.prob-table tr.open-2 td { background: #FFF6F5; }
+.prob-table tr.open-1 td { background: #FFFBF0; }
+.prob-table tr.closed td { color: #465362; }
+@media (max-width: 640px) {
+  .prob { grid-template-columns: 1fr; gap: 4px; }
+}

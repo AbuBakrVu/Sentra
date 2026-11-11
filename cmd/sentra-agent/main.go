@@ -13,7 +13,7 @@ import (
 	"sentra/internal/agent"
 )
 
-var version = "0.2.0-dev"
+var version = "0.3.0-dev"
 
 const defaultCfg = "/etc/sentra/agent.json"
 

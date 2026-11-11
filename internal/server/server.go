@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"text/template"
@@ -42,6 +43,7 @@ type Server struct {
 	loginMu    sync.Mutex
 	loginFails map[string][]time.Time
 	pve        *pvePoller
+	eng        *Engine
 }
 
 const offlineAfter = 3 * time.Minute
@@ -70,7 +72,7 @@ func New(cfg Config, web fs.FS) (*Server, *tls.Certificate, error) {
 		os.WriteFile(pf, []byte(pw+"\n"), 0o600)
 		log.Printf("Создан администратор: логин admin, пароль %s (сохранён в %s). Смените его после входа.", pw, pf)
 	}
-	s := &Server{cfg: cfg, st: st, vm: NewVM(cfg.VMURL), pin: pin, web: web, loginFails: map[string][]time.Time{}, pve: newPVEPoller()}
+	s := &Server{cfg: cfg, st: st, vm: NewVM(cfg.VMURL), pin: pin, web: web, loginFails: map[string][]time.Time{}, pve: newPVEPoller(), eng: NewEngine(st)}
 	return s, &cert, nil
 }
 
@@ -94,6 +96,9 @@ func (s *Server) Handler() http.Handler {
 	m.HandleFunc("DELETE /api/hosts/{id}", s.auth(s.deleteHost))
 	m.HandleFunc("GET /api/hosts/{id}/chart", s.auth(s.chart))
 	m.HandleFunc("POST /api/enroll", s.auth(s.newEnroll))
+	m.HandleFunc("GET /api/problems", s.auth(s.listProblems))
+	m.HandleFunc("POST /api/problems/{id}/ack", s.auth(s.ackProblem))
+	m.HandleFunc("POST /api/hosts/{id}/maintenance", s.auth(s.setMaintenance))
 	m.HandleFunc("GET /api/pve", s.auth(s.listPVE))
 	m.HandleFunc("POST /api/pve", s.auth(s.addPVE))
 	m.HandleFunc("DELETE /api/pve/{id}", s.auth(s.deletePVE))
@@ -300,6 +305,8 @@ func (s *Server) agentMetrics(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.st.TouchHost(id, time.Now().Unix(), summarize(b.Samples), b.Inventory); err != nil {
 		log.Printf("обновление хоста %s: %v", id, err)
+	} else if h, err := s.st.Host(id); err == nil {
+		s.eng.Eval(h, time.Now())
 	}
 	w.WriteHeader(204)
 }
@@ -309,19 +316,34 @@ func summarize(ss []proto.Sample) map[string]any {
 	m := map[string]any{}
 	var rx, tx, diskMax float64
 	diskMount := ""
+	fs := map[string][]float64{} // раздел → [% занято, свободно, всего]
+	part := func(mnt string) []float64 {
+		if fs[mnt] == nil {
+			fs[mnt] = []float64{0, 0, 0}
+		}
+		return fs[mnt]
+	}
 	for _, s := range ss {
 		switch s.Name {
 		case proto.MCPUUsage, proto.MMemUsedPct, proto.MLoad1, proto.MUptime, proto.MSwapUsedPct, proto.MMemTotal, proto.MMemUsed:
 			m[s.Name] = s.Value
 		case proto.MFsUsedPct:
+			part(s.Labels["mount"])[0] = s.Value
 			if s.Value >= diskMax {
 				diskMax, diskMount = s.Value, s.Labels["mount"]
 			}
+		case proto.MFsFree:
+			part(s.Labels["mount"])[1] = s.Value
+		case proto.MFsTotal:
+			part(s.Labels["mount"])[2] = s.Value
 		case proto.MNetRx:
 			rx += s.Value
 		case proto.MNetTx:
 			tx += s.Value
 		}
+	}
+	if len(fs) > 0 {
+		m["fs"] = fs
 	}
 	m["disk_max_percent"] = diskMax
 	m["disk_max_mount"] = diskMount
@@ -417,13 +439,24 @@ func (s *Server) download(w http.ResponseWriter, r *http.Request) {
 
 type hostView struct {
 	*Host
-	Online bool     `json:"online"`
-	Status string   `json:"status"` // ok, warning, critical, offline, waiting, stopped
-	Issues []string `json:"issues"`
+	Online   bool          `json:"online"`
+	Status   string        `json:"status"` // ok, warning, critical, offline, waiting, stopped
+	Issues   []string      `json:"issues"`
+	Problems []*Problem    `json:"problems"`
+	Maint    bool          `json:"maintenance"`
+	Av       *Availability `json:"availability,omitempty"`
 }
 
-func view(h *Host) hostView {
-	v := hostView{Host: h, Issues: []string{}}
+// view собирает состояние устройства: связь и статус Proxmox берём напрямую,
+// остальное — из открытых проблем движка (с задержкой и гистерезисом).
+func view(h *Host, open []*Problem) hostView {
+	v := hostView{Host: h, Issues: []string{}, Problems: []*Problem{}}
+	v.Maint = h.MaintUntil > time.Now().Unix()
+	for _, p := range open {
+		if p.Kind != "stopped" {
+			v.Problems = append(v.Problems, p)
+		}
+	}
 	if h.LastSeen == 0 {
 		v.Status = "waiting"
 		return v
@@ -462,29 +495,46 @@ func view(h *Host) hostView {
 			return v
 		}
 	}
-	// стартовые пороги из ТЗ; настраиваемый движок появится на этапе 2
 	v.Status = "ok"
-	check := func(val float64, warn, crit float64, what string) {
+	sort.Slice(v.Problems, func(i, j int) bool { return v.Problems[i].Severity > v.Problems[j].Severity })
+	for _, p := range v.Problems {
 		switch {
-		case val > crit:
+		case p.Severity == 2:
 			v.Status = "critical"
-			v.Issues = append(v.Issues, fmt.Sprintf("%s %.0f%%", what, val))
-		case val > warn:
-			if v.Status == "ok" {
-				v.Status = "warning"
-			}
-			v.Issues = append(v.Issues, fmt.Sprintf("%s %.0f%%", what, val))
+		case p.Severity == 1 && v.Status == "ok":
+			v.Status = "warning"
+		}
+		v.Issues = append(v.Issues, p.Title)
+	}
+	return v
+}
+
+// views добавляет к устройствам открытые проблемы и доступность за 30 дней.
+func (s *Server) views(hs []*Host) ([]hostView, error) {
+	now := time.Now()
+	since := now.AddDate(0, 0, -availDays-1).Unix()
+	all, err := s.st.ProblemsSince(since)
+	if err != nil {
+		return nil, err
+	}
+	byHost := map[string][]*Problem{}
+	openBy := map[string][]*Problem{}
+	for _, p := range all {
+		byHost[p.HostID] = append(byHost[p.HostID], p)
+		if p.ClosedAt == nil {
+			openBy[p.HostID] = append(openBy[p.HostID], p)
 		}
 	}
-	m := h.LastMetrics
-	check(num(m, proto.MCPUUsage), 85, 95, "CPU")
-	check(num(m, proto.MMemUsedPct), 85, 95, "Память")
-	disk := "Диск"
-	if mnt, _ := m["disk_max_mount"].(string); mnt != "" {
-		disk = "Диск " + mnt
+	out := make([]hostView, 0, len(hs))
+	for _, h := range hs {
+		v := view(h, openBy[h.ID])
+		if h.LastSeen != 0 {
+			av := availabilityFor(h.CreatedAt, byHost[h.ID], now)
+			v.Av = &av
+		}
+		out = append(out, v)
 	}
-	check(num(m, "disk_max_percent"), 85, 95, disk)
-	return v
+	return out, nil
 }
 
 func (s *Server) listHosts(w http.ResponseWriter, r *http.Request, _ *User) {
@@ -493,9 +543,10 @@ func (s *Server) listHosts(w http.ResponseWriter, r *http.Request, _ *User) {
 		httpErr(w, 500, err.Error())
 		return
 	}
-	out := make([]hostView, 0, len(hs))
-	for _, h := range hs {
-		out = append(out, view(h))
+	out, err := s.views(hs)
+	if err != nil {
+		httpErr(w, 500, err.Error())
+		return
 	}
 	writeJSON(w, 200, out)
 }
@@ -506,7 +557,12 @@ func (s *Server) getHost(w http.ResponseWriter, r *http.Request, _ *User) {
 		httpErr(w, 404, "хост не найден")
 		return
 	}
-	writeJSON(w, 200, view(h))
+	out, err := s.views([]*Host{h})
+	if err != nil {
+		httpErr(w, 500, err.Error())
+		return
+	}
+	writeJSON(w, 200, out[0])
 }
 
 func (s *Server) renameHost(w http.ResponseWriter, r *http.Request, _ *User) {

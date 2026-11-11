@@ -53,4 +53,5 @@ export const statusText = {
   offline: 'Нет связи',
   waiting: 'Ждём данные',
   stopped: 'Выключена',
+  maintenance: 'Обслуживание',
 }

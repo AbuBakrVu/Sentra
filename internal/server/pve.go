@@ -232,11 +232,17 @@ func (s *Server) collectPVE(ctx context.Context, src *PVESource) error {
 			}
 		}
 		s.st.UpsertPVEHost(src.ID, r.ID, kind, name, now.Unix(), summarize(samples), meta)
+		if h, err := s.st.Host(id); err == nil {
+			s.eng.Eval(h, now)
+		}
 	}
 
 	for ext, id := range s.st.PVEHostIDs(src.ID) {
 		if !seen[ext] {
 			s.st.MarkPVEGone(id)
+			if h, err := s.st.Host(id); err == nil {
+				s.eng.Eval(h, now)
+			}
 		}
 	}
 	s.st.PVEResult(src.ID, true, "", sum)
