@@ -24,6 +24,16 @@ curl -fsSL https://raw.githubusercontent.com/AbuBakrVu/Sentra/main/install.sh | 
 
 **Обновление:** запустите ту же команду ещё раз. Настройки, устройства и история графиков сохранятся.
 
+После установки на сервере есть команда `sentra`:
+
+| Команда | Что делает |
+| --- | --- |
+| `sudo sentra info` | Адрес панели, логин и пароль первого входа |
+| `sudo sentra update` | Обновить до свежей версии из GitHub |
+| `sudo sentra status` | Состояние контейнеров |
+| `sudo sentra logs` | Журнал сервера |
+| `sudo sentra restart` | Перезапустить коробку |
+
 Наружу коробка открывает только порт 443. VictoriaMetrics доступна только внутри Docker-сети.
 
 <details>
