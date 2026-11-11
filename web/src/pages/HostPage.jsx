@@ -6,6 +6,8 @@ import { ago, bitrate, bytes, duration, pct, statusText } from '../format.js'
 import { isPVE } from './Overview.jsx'
 import AvailabilityBar from '../Availability.jsx'
 import { ProblemRows } from './Problems.jsx'
+import Fresh from '../Fresh.jsx'
+import { marksFor } from '../marks.js'
 
 const rangeList = [['1h', '1 час'], ['6h', '6 часов'], ['24h', 'Сутки'], ['7d', 'Неделя'], ['30d', 'Месяц']]
 
@@ -113,6 +115,7 @@ export default function HostPage({ id }) {
         <p className="lead">
           <span className={`badge s-${h.status}`}>{statusText[h.status]}</span>
           {h.issues.length > 0 && <span> {h.issues.join(', ')}</span>}
+          {h.last_seen > 0 && <Fresh at={h.last_seen * 1000} label="Данные получены" stale={180} />}
         </p>
       </div>
 
@@ -169,10 +172,10 @@ export default function HostPage({ id }) {
                 {meta.storages.map((st) => (
                   <tr key={st.name}>
                     <td><b>{st.name}</b>{st.shared && <span className="muted"> общее</span>}</td>
-                    <td>{st.type}</td>
-                    <td className="num">{bytes(st.used)}</td>
-                    <td className="num">{bytes(st.total)}</td>
-                    <td><span className="meter-track inline"><span className={`meter-fill ${st.percent > 95 ? 'critical' : st.percent > 85 ? 'warning' : 'ok'}`} style={{ width: `${Math.min(100, st.percent)}%` }} /></span> {pct(st.percent)}</td>
+                    <td data-label="Тип">{st.type}</td>
+                    <td className="num" data-label="Занято">{bytes(st.used)}</td>
+                    <td className="num" data-label="Всего">{bytes(st.total)}</td>
+                    <td data-label="Заполнение"><span className="meter-track inline"><span className={`meter-fill ${st.percent > 95 ? 'critical' : st.percent > 85 ? 'warning' : 'ok'}`} style={{ width: `${Math.min(100, st.percent)}%` }} /></span> {pct(st.percent)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -186,7 +189,7 @@ export default function HostPage({ id }) {
       )}
 
       <div className="charts">
-        {charts.map(([metric, title]) => <Chart key={metric} hostId={id} metric={metric} range={range} refreshKey={tick} title={title} />)}
+        {charts.map(([metric, title]) => <Chart key={metric} hostId={id} metric={metric} range={range} refreshKey={tick} title={title} marks={marksFor(metric, history)} />)}
       </div>
 
       {(!pve || h.meta?.gone === 1) && (

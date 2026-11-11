@@ -4,6 +4,8 @@ import Chart from '../Chart.jsx'
 import AvailabilityBar, { pctText, pctTone } from '../Availability.jsx'
 import { plural } from '../format.js'
 import { duration, when } from './Problems.jsx'
+import Fresh from '../Fresh.jsx'
+import { marksFor } from '../marks.js'
 
 const rangeList = [['1h', '1 час'], ['6h', '6 часов'], ['24h', 'Сутки'], ['7d', 'Неделя'], ['30d', 'Месяц']]
 const dayList = [[7, '7 дней'], [30, '30 дней'], [90, '90 дней']]
@@ -38,12 +40,15 @@ export default function Internet() {
   const [days, setDays] = useState(30)
   const [range, setRange] = useState(() => sessionStorage.getItem('sentra.range') || '1h')
   const [tick, setTick] = useState(0)
+  const [probs, setProbs] = useState([])
+  const [setup, setSetup] = useState(false)
 
   useEffect(() => {
     let alive = true
     const load = () => {
       api.inet().then((x) => alive && (setD(x), setError(null))).catch((e) => alive && setError(e.message))
       api.inetOutages(days).then((x) => alive && setRep(x)).catch(() => {})
+      api.problems('all', 30, 'internet').then((l) => alive && setProbs(l)).catch(() => {})
     }
     load()
     const t = setInterval(() => { load(); setTick((n) => n + 1) }, 30000)
@@ -72,11 +77,12 @@ export default function Internet() {
           {on && h.status === 'ok' && <span> Коробка каждые 30 секунд проверяет {d.config.router ? 'роутер и ' : ''}внешние адреса.</span>}
           {on && h.status === 'waiting' && <span> Первая проверка займёт до минуты.</span>}
           {!on && <span> Включите её в настройках ниже.</span>}
+          {on && h.last_seen > 0 && <Fresh at={h.last_seen * 1000} label="Проверено" stale={90} />}
         </p>
       </div>
 
       {on && !d.config.router && (
-        <p className="banner info">Укажите адрес роутера в настройках ниже. Тогда при сбое будет видно, виноват провайдер или сеть в офисе, и это попадёт в отчёт.</p>
+        <p className="banner info">Укажите адрес роутера: тогда при сбое будет видно, виноват провайдер или сеть в офисе, и это попадёт в отчёт. <button type="button" className="link-btn" onClick={() => { setSetup(true); setTimeout(() => document.getElementById('inet-setup')?.scrollIntoView({ behavior: 'smooth' }), 50) }}>Открыть настройки</button></p>
       )}
 
       {on && (
@@ -114,10 +120,10 @@ export default function Internet() {
                     {targets.map((t) => (
                       <tr key={t.name} className={t.up ? '' : 'row-critical'}>
                         <td><span className={`dot s-${t.up ? 'ok' : 'critical'}`} aria-hidden="true" /><b>{t.name}</b> <span className="muted">{t.addr}</span></td>
-                        <td className="muted">{t.role === 'router' ? 'роутер в офисе' : 'адрес в интернете'}</td>
-                        <td>{t.up ? 'отвечает' : 'не отвечает'}{t.up && t.via === 'tcp' && d.method !== 'tcp' && <span className="muted"> (на ping молчит, проверен по TCP)</span>}</td>
-                        <td className="num">{t.up && t.via === 'icmp' ? lossText(t.loss) : '—'}</td>
-                        <td className="num">{ms(t.rtt)}</td>
+                        <td className="muted" data-label="Что это">{t.role === 'router' ? 'роутер в офисе' : 'адрес в интернете'}</td>
+                        <td data-label="Сейчас">{t.up ? 'отвечает' : 'не отвечает'}{t.up && t.via === 'tcp' && d.method !== 'tcp' && <span className="muted"> (на ping молчит, проверен по TCP)</span>}</td>
+                        <td className="num" data-label="Потери">{t.up && t.via === 'icmp' ? lossText(t.loss) : '—'}</td>
+                        <td className="num" data-label="Задержка">{ms(t.rtt)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -137,8 +143,8 @@ export default function Internet() {
             ))}
           </div>
           <div className="charts">
-            <Chart hostId="internet" metric="inet_rtt" range={range} refreshKey={tick} title="Задержка" />
-            <Chart hostId="internet" metric="inet_loss" range={range} refreshKey={tick} title="Потери пакетов" />
+            <Chart hostId="internet" metric="inet_rtt" range={range} refreshKey={tick} title="Задержка" marks={marksFor('inet_rtt', probs)} />
+            <Chart hostId="internet" metric="inet_loss" range={range} refreshKey={tick} title="Потери пакетов" marks={marksFor('inet_loss', probs)} />
           </div>
         </>
       )}
@@ -162,7 +168,7 @@ export default function Internet() {
                 Без интернета <b>{span(rep.down_seconds)}</b>
                 {rep.provider_seconds > 0 && <>, из них <b>{span(rep.provider_seconds)}</b> роутер отвечал, а внешние адреса нет</>}
                 {rep.local_seconds > 0 && <>, <b>{span(rep.local_seconds)}</b> не отвечал сам роутер</>}
-                . Доступность <b className={`pct ${pctTone(rep.pct)}`}>{pctText(rep.pct)}</b>.
+                . {rep.young ? 'Процент доступности появится через сутки наблюдения.' : <>Доступность <b className={`pct ${pctTone(rep.pct)}`}>{pctText(rep.pct)}</b>.</>}
               </p>
               <div className="tbl-box">
                 <table className="prob-table">
@@ -171,9 +177,9 @@ export default function Internet() {
                     {rep.outages.map((o) => (
                       <tr key={o.id} className={o.closed_at ? '' : 'open-2'}>
                         <td className="nowrap">{when(o.opened_at)}</td>
-                        <td className="nowrap">{o.closed_at ? when(o.closed_at) : 'продолжается'}</td>
-                        <td className="nowrap">{duration(o.opened_at, o.closed_at)}</td>
-                        <td className="wrap">{causeText[o.cause]}</td>
+                        <td className="nowrap" data-label="Закончилось">{o.closed_at ? when(o.closed_at) : 'продолжается'}</td>
+                        <td className="nowrap" data-label="Длилось">{duration(o.opened_at, o.closed_at)}</td>
+                        <td className="wrap" data-label="Причина">{causeText[o.cause]}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -185,7 +191,10 @@ export default function Internet() {
         </section>
       )}
 
-      <InetSettings config={d.config} onSaved={(config) => { setD({ ...d, config }); api.inet().then(setD).catch(() => {}) }} />
+      <details className="help inet-setup" id="inet-setup" open={setup || !on} onToggle={(e) => setSetup(e.currentTarget.open)}>
+        <summary>Настройки проверки</summary>
+        <InetSettings config={d.config} onSaved={(config) => { setD({ ...d, config }); api.inet().then(setD).catch(() => {}) }} />
+      </details>
     </>
   )
 }
@@ -213,7 +222,6 @@ function InetSettings({ config, onSaved }) {
 
   return (
     <form className="form wide-form inet-form" onSubmit={submit}>
-      <h2>Настройки проверки</h2>
       <label className="check"><input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />Проверять интернет-канал</label>
       <label>Адрес роутера в офисе
         <input value={router} onChange={(e) => setRouter(e.target.value)} placeholder="например 192.168.1.1" maxLength={253} inputMode="url" autoComplete="off" />

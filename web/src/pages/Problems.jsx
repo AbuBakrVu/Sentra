@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api.js'
 import { Link } from '../App.jsx'
+import Fresh from '../Fresh.jsx'
 
 const sevText = { 1: 'Внимание', 2: 'Авария' }
 
@@ -62,11 +63,11 @@ export function ProblemRows({ list, showHost = true, onChange }) {
             return (
               <tr key={p.id} className={p.closed_at ? 'closed' : `open-${sev}`}>
                 <td><span className={`badge s-${p.closed_at ? 'ok' : sev === 2 ? 'critical' : 'warning'}`}>{p.closed_at ? 'Решено' : sevText[sev]}</span>{p.closed_at && <span className="muted small"> было: {sevText[sev]?.toLowerCase()}</span>}</td>
-                {showHost && <td><Link to={`/hosts/${p.host_id}`} className="nm">{p.host_name || p.host_id}</Link></td>}
-                <td className="wrap">{p.title}</td>
-                <td className="nowrap">{when(p.opened_at)}</td>
-                <td className="nowrap">{duration(p.opened_at, p.closed_at)}{!p.closed_at && <span className="muted"> и идёт</span>}</td>
-                <td>{p.closed_at
+                {showHost && <td data-label="Устройство"><Link to={`/hosts/${p.host_id}`} className="nm">{p.host_name || p.host_id}</Link></td>}
+                <td className="wrap" data-label="Что случилось">{p.title}</td>
+                <td className="nowrap" data-label="Началось">{when(p.opened_at)}</td>
+                <td className="nowrap" data-label="Длилось">{duration(p.opened_at, p.closed_at)}{!p.closed_at && <span className="muted"> и идёт</span>}</td>
+                <td data-label="Работа">{p.closed_at
                   ? (p.ack_by ? <span className="muted">{p.ack_by}{p.ack_comment ? `: ${p.ack_comment}` : ''}</span> : <span className="muted">—</span>)
                   : <AckButton p={p} onDone={onChange} />}</td>
               </tr>
@@ -83,11 +84,12 @@ export default function Problems() {
   const [list, setList] = useState(null)
   const [error, setError] = useState(null)
   const [tick, setTick] = useState(0)
+  const [at, setAt] = useState(null)
 
   useEffect(() => {
     let alive = true
     const load = () => api.problems(tab === 'open' ? 'open' : 'all', 30)
-      .then((l) => alive && (setList(l), setError(null))).catch((e) => alive && setError(e.message))
+      .then((l) => alive && (setList(l), setError(null), setAt(Date.now()))).catch((e) => alive && setError(e.message))
     load()
     const t = setInterval(load, 15000)
     return () => { alive = false; clearInterval(t) }
@@ -98,7 +100,7 @@ export default function Problems() {
 
   return (
     <>
-      <h1 className="headline">Проблемы</h1>
+      <div className="page-head"><h1 className="headline">Проблемы</h1><div className="head-side"><Fresh at={at} /></div></div>
       <p className="lead" style={{ marginBottom: 18 }}>
         {tab === 'open'
           ? (list ? (list.length ? `Сейчас ${crit} ${crit === 1 ? 'авария' : crit > 1 && crit < 5 ? 'аварии' : 'аварий'} и ${warn} ${warn === 1 ? 'предупреждение' : warn > 1 && warn < 5 ? 'предупреждения' : 'предупреждений'}.` : 'Сейчас всё в порядке.') : '')

@@ -9,8 +9,10 @@ import Settings from './pages/Settings.jsx'
 import Login from './pages/Login.jsx'
 import Problems from './pages/Problems.jsx'
 import Internet from './pages/Internet.jsx'
+import Wall from './pages/Wall.jsx'
+import Brief from './pages/Brief.jsx'
 
-// Минимальный роутер на History API: нам хватает четырёх экранов.
+// Минимальный роутер на History API: экранов немного.
 export function navigate(to) {
   window.history.pushState({}, '', to)
   window.dispatchEvent(new Event('sentra:nav'))
@@ -57,6 +59,7 @@ export default function App() {
 
   if (user === undefined) return null
   if (!user) return <Login onLogin={setUser} />
+  if (path === '/wall') return <Wall />
 
   let page
   const host = path.match(/^\/hosts\/([a-z0-9_-]+)$/)
@@ -66,7 +69,8 @@ export default function App() {
   else if (path === '/add/proxmox') page = <AddProxmox />
   else if (path === '/settings') page = <Settings />
   else if (path === '/problems') page = <Problems />
-  else page = <Overview user={user} />
+  else if (path === '/brief') page = <Brief />
+  else page = <Overview />
 
   return (
     <div className="shell">
@@ -92,26 +96,47 @@ const sections = [
   ['/', 'grid', 'Обзор'],
   ['/problems', 'alert', 'Проблемы'],
   ['/internet', 'globe', 'Интернет'],
-  ['/add', 'server', 'Сервер с агентом'],
-  ['/add/proxmox', 'layers', 'Proxmox'],
   ['/settings', 'gear', 'Настройки'],
 ]
+
+// Выпадающее меню: закрывается по клику мимо и по Esc.
+function usePop(sel) {
+  const [open, setOpen] = useState(false)
+  useEffect(() => {
+    if (!open) return
+    const close = (e) => { if (!e.target.closest?.(sel)) setOpen(false) }
+    const esc = (e) => e.key === 'Escape' && setOpen(false)
+    document.addEventListener('click', close)
+    document.addEventListener('keydown', esc)
+    return () => { document.removeEventListener('click', close); document.removeEventListener('keydown', esc) }
+  }, [open, sel])
+  return [open, setOpen]
+}
+
+// Одна кнопка «Добавить» вместо отдельных разделов меню под каждый тип устройства.
+function AddMenu() {
+  const [open, setOpen] = usePop('.addm')
+  return (
+    <div className="me addm">
+      <button className="btn primary pill" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        <Icon name="plus" size={18} /><span>Добавить</span>
+      </button>
+      {open && (
+        <div className="me-pop" role="menu">
+          <Link to="/add" role="menuitem" onClick={() => setOpen(false)}><Icon name="server" size={18} /><span>Сервер с агентом<small>Linux, одна команда</small></span></Link>
+          <Link to="/add/proxmox" role="menuitem" onClick={() => setOpen(false)}><Icon name="layers" size={18} /><span>Proxmox<small>узлы и все машины сразу</small></span></Link>
+        </div>
+      )}
+    </div>
+  )
+}
 
 // Верхнее меню: активный раздел подписан, остальные — иконки с подсказкой.
 function TopNav({ path, user, logout }) {
   const open = useOpenCount()
-  const [menu, setMenu] = useState(false)
+  const [menu, setMenu] = usePop('.me-user')
   const inet = path === '/internet' || path === '/hosts/internet'
   const isOn = (to) => (to === '/internet' ? inet : to === '/' ? path === '/' || (path.startsWith('/hosts/') && !inet) : path === to)
-  useEffect(() => {
-    if (!menu) return
-    const close = (e) => { if (!e.target.closest?.('.me')) setMenu(false) }
-    const esc = (e) => e.key === 'Escape' && setMenu(false)
-    document.addEventListener('click', close)
-    document.addEventListener('keydown', esc)
-    return () => { document.removeEventListener('click', close); document.removeEventListener('keydown', esc) }
-  }, [menu])
-
   return (
     <header className="topnav">
       <Link to="/" className="brand" aria-label="Sentra, обзор">
@@ -122,26 +147,25 @@ function TopNav({ path, user, logout }) {
         {sections.map(([to, icon, label]) => {
           const on = isOn(to)
           return (
-            <Link key={to} to={to} className={on ? 'pn active' : 'pn'} aria-current={on ? 'page' : undefined}
-              aria-label={on ? undefined : label} title={on ? undefined : label}>
-              <Icon name={icon} size={19} />{on && <span>{label}</span>}
-              {to === '/problems' && open > 0 && <i className="pn-count">{open}</i>}
+            <Link key={to} to={to} className={on ? 'pn active' : 'pn'} aria-current={on ? 'page' : undefined}>
+              <Icon name={icon} size={19} /><span>{label}</span>
+              {to === '/problems' && open > 0 && <i className="pn-count" aria-label={`открытых: ${open}`}>{open}</i>}
             </Link>
           )
         })}
       </nav>
       <div className="tn-right">
         <HostSearch />
-        <Link to="/problems" className="icon-btn bell" aria-label={open ? `Проблемы: ${open}` : 'Проблем нет'} title={open ? `Открытых проблем: ${open}` : 'Проблем нет'}>
-          <Icon name="bell" size={19} />{open > 0 && <i />}
-        </Link>
-        <div className="me">
+        <AddMenu />
+        <div className="me me-user">
           <button className="avatar" aria-haspopup="menu" aria-expanded={menu} aria-label={`Пользователь ${user.login}`} onClick={() => setMenu((v) => !v)}>
             {user.login.slice(0, 1).toUpperCase()}
           </button>
           {menu && (
             <div className="me-pop" role="menu">
               <p><b>{user.login}</b><small>Администратор</small></p>
+              <Link to="/wall" role="menuitem" onClick={() => setMenu(false)}><Icon name="grid" size={18} />Экран на стену</Link>
+              <Link to="/brief" role="menuitem" onClick={() => setMenu(false)}><Icon name="check" size={18} />Сводка для директора</Link>
               <Link to="/settings" role="menuitem" onClick={() => setMenu(false)}><Icon name="gear" size={18} />Настройки</Link>
               <button role="menuitem" onClick={logout}><Icon name="logout" size={18} />Выйти</button>
             </div>

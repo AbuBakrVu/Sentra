@@ -15,10 +15,15 @@ function fmt(unit, v) {
   return v.toLocaleString('ru-RU', { maximumFractionDigits: 2 })
 }
 
-export default function Chart({ hostId, metric, range, title, refreshKey }) {
+const tint = { warning: '168, 111, 0', critical: '194, 57, 47' }
+
+export default function Chart({ hostId, metric, range, title, refreshKey, marks }) {
   const box = useRef(null)
   const plot = useRef(null)
-  const [state, setState] = useState({ loading: true, error: null, empty: false })
+  const mk = useRef(marks)
+  mk.current = marks
+  useEffect(() => { plot.current?.redraw(false) }, [marks])
+  const [state, setState] = useState({ loading: true, error: null, empty: false, t0: 0, t1: 0 })
 
   useEffect(() => {
     let alive = true
@@ -27,7 +32,7 @@ export default function Chart({ hostId, metric, range, title, refreshKey }) {
       plot.current?.destroy()
       plot.current = null
       const hasData = d.series.some((s) => s.values.some((v) => v != null))
-      setState({ loading: false, error: null, empty: !hasData })
+      setState({ loading: false, error: null, empty: !hasData, t0: d.timestamps[0], t1: d.timestamps[d.timestamps.length - 1] })
       if (!hasData || !box.current) return
       const unit = d.unit
       const opts = {
@@ -35,6 +40,39 @@ export default function Chart({ hostId, metric, range, title, refreshKey }) {
         height: 200,
         cursor: { points: { size: 6 } },
         legend: { live: true },
+        hooks: {
+          // заливка: когда по этому показателю была проблема
+          drawClear: [(u) => {
+            const spans = mk.current?.spans
+            if (!spans?.length) return
+            const { ctx, bbox } = u
+            ctx.save()
+            for (const s of spans) {
+              const x0 = Math.max(bbox.left, u.valToPos(s.a, 'x', true))
+              const x1 = Math.min(bbox.left + bbox.width, u.valToPos(s.b, 'x', true))
+              if (x1 < bbox.left || x0 > bbox.left + bbox.width) continue
+              ctx.fillStyle = `rgba(${tint[s.tone]}, 0.12)`
+              ctx.fillRect(x0, bbox.top, Math.max(2 * devicePixelRatio, x1 - x0), bbox.height)
+            }
+            ctx.restore()
+          }],
+          // пунктир: пороги, с которых начинаются предупреждение и авария
+          draw: [(u) => {
+            const lines = mk.current?.lines
+            if (!lines?.length) return
+            const { ctx, bbox } = u
+            ctx.save()
+            ctx.lineWidth = devicePixelRatio
+            ctx.setLineDash([5 * devicePixelRatio, 4 * devicePixelRatio])
+            for (const l of lines) {
+              const y = Math.round(u.valToPos(l.v, 'y', true))
+              if (!(y > bbox.top && y < bbox.top + bbox.height)) continue
+              ctx.strokeStyle = `rgba(${tint[l.tone]}, 0.75)`
+              ctx.beginPath(); ctx.moveTo(bbox.left, y); ctx.lineTo(bbox.left + bbox.width, y); ctx.stroke()
+            }
+            ctx.restore()
+          }],
+        },
         scales: {
           x: { time: true },
           y: unit === '%' ? { range: (u, min, max) => [0, Math.max(100, max)] } : { range: (u, min, max) => [0, max > 0 ? max * 1.15 : 1] },
@@ -63,7 +101,7 @@ export default function Chart({ hostId, metric, range, title, refreshKey }) {
         ],
       }
       plot.current = new uPlot(opts, [d.timestamps, ...d.series.map((s) => s.values)], box.current)
-    }).catch((e) => alive && setState({ loading: false, error: e.message, empty: false }))
+    }).catch((e) => alive && setState({ loading: false, error: e.message, empty: false, t0: 0, t1: 0 }))
     return () => { alive = false }
   }, [hostId, metric, range, refreshKey])
 
@@ -76,12 +114,18 @@ export default function Chart({ hostId, metric, range, title, refreshKey }) {
     return () => { ro.disconnect(); plot.current?.destroy(); plot.current = null }
   }, [])
 
+  // заливка попала в выбранный период?
+  const shaded = !!marks?.spans.some((s) => s.b >= state.t0 && s.a <= state.t1)
+
   return (
     <section className="chart">
       <h3>{title}</h3>
       {state.error && <p className="chart-note error">{state.error}</p>}
       {state.empty && <p className="chart-note">За выбранный период данных нет. Первые точки появятся через минуту после подключения.</p>}
       <div ref={box} className="chart-canvas" />
+      {marks && !state.empty && !state.error && (marks.lines.length > 0 || shaded) && (
+        <p className="chart-key">{marks.lines.length > 0 && <span><i className="k-line" />пороги предупреждения и аварии</span>}{shaded && <span><i className="k-span" />время, когда была проблема</span>}</p>
+      )}
     </section>
   )
 }

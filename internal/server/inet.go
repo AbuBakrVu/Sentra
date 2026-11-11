@@ -32,9 +32,11 @@ const (
 	mInetLoss = "inet_loss_percent"
 	mInetRTT  = "inet_rtt_ms"
 
-	titleInetProvider = "Интернет недоступен: роутер отвечает, внешние адреса нет"
-	titleInetUnknown  = "Интернет недоступен: внешние адреса не отвечают"
+	// устройство в журнале уже называется «Интернет», поэтому в тексте его не повторяем
+	titleInetProvider = "Нет связи с внешними адресами, роутер отвечает"
+	titleInetUnknown  = "Нет связи с внешними адресами"
 	titleRouterDown   = "Нет связи с роутером"
+	titleInetProvOld  = "Интернет недоступен: роутер отвечает, внешние адреса нет" // записи первой версии
 )
 
 var (
@@ -356,6 +358,7 @@ type OutageReport struct {
 	ProviderSec int64    `json:"provider_seconds"` // роутер отвечал, внешние адреса нет
 	LocalSec    int64    `json:"local_seconds"`    // не отвечал сам роутер
 	Pct         *float64 `json:"pct"`
+	Young       bool     `json:"young"` // проверка работает меньше суток
 }
 
 var causeText = map[string]string{
@@ -374,6 +377,7 @@ func (s *Server) outages(days int, now time.Time) (*OutageReport, error) {
 	if h.CreatedAt > rep.From {
 		rep.From = h.CreatedAt
 	}
+	rep.Young = rep.To-rep.From < int64(youngFor.Seconds())
 	all, err := s.st.ProblemsSince(from)
 	if err != nil {
 		return nil, err
@@ -394,7 +398,7 @@ func (s *Server) outages(days int, now time.Time) (*OutageReport, error) {
 		case p.Key == "router_down":
 			o.Cause = "local"
 			local = append(local, sp)
-		case p.Title == titleInetProvider:
+		case p.Title == titleInetProvider || p.Title == titleInetProvOld:
 			o.Cause = "provider"
 			prov = append(prov, sp)
 		}
@@ -551,7 +555,9 @@ func (s *Server) inetReport(w http.ResponseWriter, r *http.Request, _ *User) {
 		router = "не указан"
 	}
 	avail := "нет данных"
-	if rep.Pct != nil {
+	if rep.Young {
+		avail = "мало данных: проверка работает меньше суток"
+	} else if rep.Pct != nil {
 		avail = strings.Replace(strconv.FormatFloat(*rep.Pct, 'f', 2, 64), ".", ",", 1) + "%"
 	}
 

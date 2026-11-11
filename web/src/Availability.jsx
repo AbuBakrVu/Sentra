@@ -19,6 +19,15 @@ export function pctText(p) {
   return `${p.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`
 }
 
+// В первые сутки процент скачет от любой минуты простоя: показываем честное «мало данных».
+export function avText(av) {
+  return av?.young ? 'мало данных' : pctText(av?.pct)
+}
+
+export function avTone(av) {
+  return av?.young ? '' : pctTone(av?.pct)
+}
+
 export function pctTone(p) {
   if (p == null) return ''
   return p < 99.5 ? 'bad' : p < 99.9 ? 'lo' : ''
@@ -37,7 +46,7 @@ export default function AvailabilityBar({ av, compact = false, labels = true }) 
     if (d.notes?.length) t += '\n' + d.notes.join('\n')
     return t
   }
-  const label = `Доступность за 30 дней: ${pctText(av.pct)}`
+  const label = `Доступность за 30 дней: ${avText(av)}`
   return (
     <div className={compact ? 'av av-compact' : 'av'}>
       <div className="av-cells" role="img" aria-label={label}>
@@ -46,7 +55,7 @@ export default function AvailabilityBar({ av, compact = false, labels = true }) 
       {labels && (
         <div className="av-labels">
           <span>30 дней</span>
-          <b className={pctTone(av.pct)}>{pctText(av.pct)}</b>
+          <b className={avTone(av)}>{avText(av)}</b>
           <span>сегодня</span>
         </div>
       )}

@@ -3,7 +3,8 @@ import { api } from '../api.js'
 import { Link } from '../App.jsx'
 import { ago, plural, statusText } from '../format.js'
 import Icon from '../Icons.jsx'
-import AvailabilityBar, { hadProblems, pctText, pctTone } from '../Availability.jsx'
+import AvailabilityBar, { avText, avTone, hadProblems, pctText, pctTone } from '../Availability.jsx'
+import Fresh from '../Fresh.jsx'
 import { inetStatusText, lossText, ms } from './Internet.jsx'
 
 const order = { critical: 0, offline: 1, warning: 2, waiting: 3, ok: 4, stopped: 5 }
@@ -72,16 +73,11 @@ export function useHosts(intervalMs = 15000) {
   return { hosts, error, checkedAt }
 }
 
-// Средняя доступность по устройствам, у которых есть данные.
+// Средняя доступность по устройствам, за которыми наблюдаем дольше суток.
 function avgPct(hosts) {
-  const ps = hosts.map((h) => h.availability?.pct).filter((p) => p != null)
+  const ps = hosts.filter((h) => !h.availability?.young).map((h) => h.availability?.pct).filter((p) => p != null)
   if (!ps.length) return null
   return Math.floor((ps.reduce((a, b) => a + b, 0) / ps.length) * 100) / 100
-}
-
-function greeting() {
-  const h = new Date().getHours()
-  return h < 5 ? 'Доброй ночи' : h < 12 ? 'Доброе утро' : h < 18 ? 'Добрый день' : 'Добрый вечер'
 }
 
 // Худшее состояние за каждый день по всем устройствам.
@@ -94,7 +90,7 @@ function fleetDays(hosts) {
   return out
 }
 
-function Stat({ title, value, sub, featured, tone = '', to, onClick }) {
+function Stat({ title, value, sub, featured, tone = '', to, onClick, children }) {
   const arrow = <Icon name="arrow" size={18} />
   return (
     <div className={featured ? 'stat featured' : 'stat'}>
@@ -105,6 +101,7 @@ function Stat({ title, value, sub, featured, tone = '', to, onClick }) {
       </div>
       <div className={`stat-val ${tone}`}>{value}</div>
       <p>{sub}</p>
+      {children}
     </div>
   )
 }
@@ -189,13 +186,13 @@ function HostTable({ g }) {
             return (
               <tr key={h.id} className={`row-${h.status}`}>
                 <td><span className={`dot s-${h.status}`} aria-hidden="true" /><Link to={`/hosts/${h.id}`} className="nm">{h.name}</Link></td>
-                <td className="muted">{subtitle(h)}</td>
-                <td className="num">{live ? pct(m.cpu_usage_percent) : '—'}</td>
-                <td className="num">{live ? pct(m.mem_used_percent) : '—'}</td>
-                <td className={m.disk_max_percent > 85 && live ? 'num hot' : 'num'} title={m.disk_max_mount || undefined}>{live && m.disk_max_mount ? pct(m.disk_max_percent) : '—'}</td>
-                <td><AvailabilityBar av={h.availability} compact labels={false} /></td>
-                <td className={`num pct ${pctTone(h.availability?.pct)}`}>{pctText(h.availability?.pct)}</td>
-                <td className={`now-${h.status}`}>{nowText(h)}{h.maintenance && <span className="maint-chip">обслуживание</span>}</td>
+                <td className="muted" data-label="Тип">{subtitle(h)}</td>
+                <td className="num" data-label="CPU">{live ? pct(m.cpu_usage_percent) : '—'}</td>
+                <td className="num" data-label="Память">{live ? pct(m.mem_used_percent) : '—'}</td>
+                <td className={m.disk_max_percent > 85 && live ? 'num hot' : 'num'} data-label="Диск" title={m.disk_max_mount || undefined}>{live && m.disk_max_mount ? pct(m.disk_max_percent) : '—'}</td>
+                <td data-label="30 дней"><AvailabilityBar av={h.availability} compact labels={false} /></td>
+                <td className={`num pct ${avTone(h.availability)}`} data-label="Доступность">{avText(h.availability)}</td>
+                <td className={`now-${h.status}`} data-label="Сейчас">{nowText(h)}{h.maintenance && <span className="maint-chip">обслуживание</span>}</td>
               </tr>
             )
           })}
@@ -217,7 +214,7 @@ function InetStrip({ h }) {
       <span className="inet-now">
         {h.issues.length ? h.issues[0] : h.status === 'waiting' ? 'первая проверка займёт до минуты' : up ? `потери ${lossText(m.loss5)}, задержка ${ms(m.rtt5)}` : ''}
       </span>
-      <span className="muted inet-av">за 30 дней <b className={`pct ${pctTone(h.availability?.pct)}`}>{pctText(h.availability?.pct)}</b></span>
+      <span className="muted inet-av">{h.availability?.young ? 'доступность: мало данных' : <>за 30 дней <b className={`pct ${pctTone(h.availability?.pct)}`}>{pctText(h.availability?.pct)}</b></>}</span>
       <Icon name="arrow" size={18} />
     </Link>
   )
@@ -227,7 +224,25 @@ function readView() {
   try { return localStorage.getItem('sentra.view') || 'tiles' } catch { return 'tiles' }
 }
 
-export default function Overview({ user }) {
+// Главная фраза экрана: всё ли в порядке и, если нет, что именно.
+export function verdict(open) {
+  if (open.length === 0) return { tone: 'ok', title: 'Всё работает', text: '' }
+  const crit = open.some((p) => p.severity === 2)
+  const n = open.length
+  const first = open.slice(0, 2).map((p) => `${p.host.name}: ${p.title.charAt(0).toLowerCase()}${p.title.slice(1)}`).join('; ')
+  return {
+    tone: crit ? 'critical' : 'warning',
+    title: `${n} ${plural(n, 'проблема требует', 'проблемы требуют', 'проблем требуют')} внимания`,
+    text: n > 2 ? `${first} и ещё ${n - 2}` : first,
+  }
+}
+
+export function openProblems(all) {
+  return all.flatMap((h) => h.problems.map((p) => ({ ...p, host: h })))
+    .sort((a, b) => b.severity - a.severity || a.opened_at - b.opened_at)
+}
+
+export default function Overview() {
   const { hosts: all, error, checkedAt } = useHosts()
   // интернет-канал — не устройство: у него своя строка и своя страница
   const hosts = useMemo(() => all?.filter((h) => h.kind !== 'inet') ?? null, [all])
@@ -264,28 +279,27 @@ export default function Overview({ user }) {
   const online = hosts.filter((h) => h.online && h.status !== 'stopped').length
   const active = hosts.length - stopped
   const avg = avgPct(hosts)
-  const open = all.flatMap((h) => h.problems.map((p) => ({ ...p, host: h })))
-    .sort((a, b) => b.severity - a.severity || a.opened_at - b.opened_at)
+  const young = avg == null && hosts.some((h) => h.availability?.young)
+  const open = openProblems(all)
   const crit = open.filter((p) => p.severity === 2).length
   const warn = open.length - crit
   const days = fleetDays(hosts)
   const badDays = days.filter((d) => d === 'down').length
+  const v = verdict(open)
   const showDevices = (f) => { setFilter(f); document.getElementById('devices')?.scrollIntoView({ behavior: 'smooth' }) }
 
   return (
     <>
-      <div className="page-head">
+      <div className={`page-head verdict v-${v.tone}`}>
         <div>
-          <h1 className="headline">{greeting()}, {user?.login}</h1>
+          <h1 className="headline">{v.title}</h1>
           <p className="lead">
-            Что требует внимания сегодня
-            {checkedAt && <span className="muted">. Обновлено в {checkedAt.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</span>}
-            {error && <span className="inline-error">. Не удалось обновить: {error}</span>}
+            {v.text || `На связи ${online} из ${active} ${plural(active, 'устройства', 'устройств', 'устройств')}${inet ? (inet.status === 'ok' ? ', интернет работает' : inet.status === 'waiting' ? ', интернет проверяется' : '') : ''}.`}
           </p>
         </div>
-        <div className="head-btns">
-          <Link to="/add/proxmox" className="btn pill"><Icon name="layers" size={18} />Proxmox</Link>
-          <Link to="/add" className="btn primary pill"><Icon name="plus" size={18} />Сервер</Link>
+        <div className="head-side">
+          <Fresh at={checkedAt?.getTime()} />
+          {error && <span className="inline-error">Не удалось обновить: {error}</span>}
         </div>
       </div>
 
@@ -296,41 +310,34 @@ export default function Overview({ user }) {
           sub={offline ? 'данных нет дольше 3 минут' : 'все устройства отвечают'} />
         <Stat title="На связи" value={<>{online}<small> из {active}</small></>} onClick={() => showDevices('all')}
           sub={stopped ? `ещё ${stopped} ${plural(stopped, 'машина выключена', 'машины выключены', 'машин выключено')}` : 'выключенных машин нет'} />
-        <Stat title="Доступность" value={pctText(avg)} tone={pctTone(avg)} onClick={() => showDevices('past')}
-          sub={`среднее за 30 дней, ${past.length} ${plural(past.length, 'устройство', 'устройства', 'устройств')} с проблемами`} />
+        <Stat title="Доступность за 30 дней" value={young ? <span className="few">мало данных</span> : pctText(avg)} tone={pctTone(avg)} onClick={() => showDevices('past')}
+          sub={young ? 'процент появится через сутки наблюдения' : badDays ? `${badDays} ${plural(badDays, 'день', 'дня', 'дней')} с простоем хотя бы одного устройства` : 'ни одного дня с простоем'}>
+          <div className="av-cells stat-days" role="img" aria-label={`Сводка по дням: дней с простоем ${badDays}`}>
+            {days.map((d, i) => <span key={i} className={`av-cell av-${d}`} />)}
+          </div>
+        </Stat>
       </div>
 
       {inet && <InetStrip h={inet} />}
 
-      <div className="row2">
+      {open.length > 0 && (
         <section className="card attn" aria-labelledby="attn-h">
           <div className="card-head">
             <h2 id="attn-h">Требуют внимания</h2>
-            {open.length > 0 ? <Link to="/problems" className="more-link">Все проблемы →</Link> : <span className="muted">0</span>}
+            <Link to="/problems" className="more-link">Все проблемы →</Link>
           </div>
-          {open.length === 0 ? <p className="all-good"><Icon name="check" size={18} />Всё под контролем</p> : (
-            <div className="probs">
-              {open.slice(0, 5).map((p) => (
-                <Link key={p.id} to={`/hosts/${p.host.id}`} className="prob">
-                  <span className={`badge s-${p.severity === 2 ? 'critical' : 'warning'}`}>{sevText[p.severity]}</span>
-                  <span><b>{p.host.name}</b>: {p.title}{p.ack_by && <span className="muted">. В работе у {p.ack_by}{p.ack_comment ? `: ${p.ack_comment}` : ''}</span>}</span>
-                  <span className="muted nowrap">{since(p.opened_at)}</span>
-                </Link>
-              ))}
-              {open.length > 5 && <Link to="/problems" className="prob more">Ещё {open.length - 5}</Link>}
-            </div>
-          )}
-        </section>
-        <section className="card dark av-card" aria-labelledby="av-h">
-          <h2 id="av-h">Доступность за 30 дней</h2>
-          <p className="sub">{badDays ? `${badDays} ${plural(badDays, 'день', 'дня', 'дней')} с простоем хотя бы одного устройства` : 'Ни одного дня с простоем'}</p>
-          <div className="big-num">{pctText(avg)}</div>
-          <div className="av-cells" role="img" aria-label={`Сводка по дням: ${badDays} дней с простоем`}>
-            {days.map((d, i) => <span key={i} className={`av-cell av-${d}`} />)}
+          <div className="probs">
+            {open.slice(0, 5).map((p) => (
+              <Link key={p.id} to={`/hosts/${p.host.id}`} className="prob">
+                <span className={`badge s-${p.severity === 2 ? 'critical' : 'warning'}`}>{sevText[p.severity]}</span>
+                <span><b>{p.host.name}</b>: {p.title}{p.ack_by && <span className="muted">. В работе у {p.ack_by}{p.ack_comment ? `: ${p.ack_comment}` : ''}</span>}</span>
+                <span className="muted nowrap">{since(p.opened_at)}</span>
+              </Link>
+            ))}
+            {open.length > 5 && <Link to="/problems" className="prob more">Ещё {open.length - 5}</Link>}
           </div>
-          <div className="av-labels"><span>30 дней назад</span><span>сегодня</span></div>
         </section>
-      </div>
+      )}
 
       <div className="dev-head" id="devices">
         <h2>Устройства</h2>

@@ -365,9 +365,12 @@ type Day struct {
 }
 
 type Availability struct {
-	Pct  *float64 `json:"pct"` // nil, если данных нет совсем
-	Days []Day    `json:"days"`
+	Pct   *float64 `json:"pct"`   // nil, если данных нет совсем
+	Young bool     `json:"young"` // наблюдаем меньше суток: процент ещё ни о чём не говорит
+	Days  []Day    `json:"days"`
 }
+
+const youngFor = 24 * time.Hour
 
 const availDays = 30
 
@@ -424,7 +427,7 @@ func availabilityFor(created int64, probs []*Problem, now time.Time) Availabilit
 	}
 	down, off = merge(down), merge(off)
 
-	av := Availability{Days: make([]Day, availDays)}
+	av := Availability{Days: make([]Day, availDays), Young: nowU-created < int64(youngFor.Seconds())}
 	var total, downSum int64
 	for i := 0; i < availDays; i++ {
 		start := today.AddDate(0, 0, i-(availDays-1))
