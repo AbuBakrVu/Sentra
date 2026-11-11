@@ -5,7 +5,7 @@ import { api } from './api.js'
 import { bitrate, pct } from './format.js'
 
 // Цвета рядов: различимы между собой и не совпадают со статусными.
-const palette = ['#2B4CC4', '#0E8C8C', '#B5539A', '#7A5AE0', '#C26A1E', '#4C7A2E', '#596779', '#A33D5F']
+const palette = ['#2E7A50', '#3F6FB8', '#C2772A', '#8A5BB8', '#1E9AA0', '#B8476A', '#6A6D67', '#7C8B2E']
 
 function fmt(unit, v) {
   if (v == null) return '—'
@@ -39,15 +39,15 @@ export default function Chart({ hostId, metric, range, title, refreshKey }) {
           y: unit === '%' ? { range: (u, min, max) => [0, Math.max(100, max)] } : { range: (u, min, max) => [0, max > 0 ? max * 1.15 : 1] },
         },
         axes: [
-          { stroke: '#5B6B7B', grid: { stroke: '#E3E8EE' }, ticks: { stroke: '#E3E8EE' }, font: '12px Golos Text, system-ui',
+          { stroke: '#6A6D67', grid: { stroke: '#E6E6E1' }, ticks: { stroke: '#E6E6E1' }, font: '12px Onest, system-ui',
             values: (u, splits) => {
               const span = u.scales.x.max - u.scales.x.min
               return splits.map((ts) => new Date(ts * 1000).toLocaleString('ru-RU', span > 2 * 86400
                 ? { day: 'numeric', month: 'short' }
                 : { hour: '2-digit', minute: '2-digit' }))
             } },
-          { stroke: '#5B6B7B', grid: { stroke: '#E3E8EE' }, ticks: { show: false }, size: unit === 'B/s' ? 84 : 52,
-            font: '12px Golos Text, system-ui', values: (u, vals) => vals.map((v) => fmt(unit, v)) },
+          { stroke: '#6A6D67', grid: { stroke: '#E6E6E1' }, ticks: { show: false }, size: unit === 'B/s' ? 84 : 52,
+            font: '12px Onest, system-ui', values: (u, vals) => vals.map((v) => fmt(unit, v)) },
         ],
         series: [
           { label: 'Время', value: (u, ts) => (ts == null ? '' : new Date(ts * 1000).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })) },

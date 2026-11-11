@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { api } from '../api.js'
 import { Link } from '../App.jsx'
 import { ago, plural, statusText } from '../format.js'
+import Icon from '../Icons.jsx'
 import AvailabilityBar, { hadProblems, pctText, pctTone } from '../Availability.jsx'
 
 const order = { critical: 0, offline: 1, warning: 2, waiting: 3, ok: 4, stopped: 5 }
@@ -70,19 +71,41 @@ export function useHosts(intervalMs = 15000) {
   return { hosts, error, checkedAt }
 }
 
-function headline(hosts) {
-  const bad = hosts.filter((h) => h.status === 'critical' || h.status === 'offline').length
-  const warn = hosts.filter((h) => h.status === 'warning').length
-  if (bad) return { tone: 'critical', text: `${bad} ${plural(bad, 'авария', 'аварии', 'аварий')} ${bad === 1 ? 'требует' : 'требуют'} внимания` }
-  if (warn) return { tone: 'warning', text: `Всё работает, но ${warn} ${plural(warn, 'устройство', 'устройства', 'устройств')} на пределе` }
-  return { tone: 'ok', text: 'Всё в порядке' }
-}
-
 // Средняя доступность по устройствам, у которых есть данные.
 function avgPct(hosts) {
   const ps = hosts.map((h) => h.availability?.pct).filter((p) => p != null)
   if (!ps.length) return null
   return Math.floor((ps.reduce((a, b) => a + b, 0) / ps.length) * 100) / 100
+}
+
+function greeting() {
+  const h = new Date().getHours()
+  return h < 5 ? 'Доброй ночи' : h < 12 ? 'Доброе утро' : h < 18 ? 'Добрый день' : 'Добрый вечер'
+}
+
+// Худшее состояние за каждый день по всем устройствам.
+const rank = { down: 4, warn: 3, ok: 2, off: 1, none: 0 }
+function fleetDays(hosts) {
+  const out = Array(30).fill('none')
+  for (const h of hosts) {
+    (h.availability?.days || []).forEach((d, i) => { if (rank[d.state] > rank[out[i]]) out[i] = d.state })
+  }
+  return out
+}
+
+function Stat({ title, value, sub, featured, tone = '', to, onClick }) {
+  const arrow = <Icon name="arrow" size={18} />
+  return (
+    <div className={featured ? 'stat featured' : 'stat'}>
+      <div className="stat-head">
+        <h2>{title}</h2>
+        {to ? <Link to={to} className="arrow-btn" aria-label={`Открыть: ${title}`}>{arrow}</Link>
+          : <button className="arrow-btn" onClick={onClick} aria-label={`Показать: ${title}`}>{arrow}</button>}
+      </div>
+      <div className={`stat-val ${tone}`}>{value}</div>
+      <p>{sub}</p>
+    </div>
+  )
 }
 
 function since(unix) {
@@ -185,7 +208,7 @@ function readView() {
   try { return localStorage.getItem('sentra.view') || 'tiles' } catch { return 'tiles' }
 }
 
-export default function Overview() {
+export default function Overview({ user }) {
   const { hosts, error, checkedAt } = useHosts()
   const [filter, setFilter] = useState('all')
   const [viewMode, setViewMode] = useState(readView)
@@ -210,53 +233,91 @@ export default function Overview() {
     )
   }
 
-  const hl = headline(hosts)
   const now = sorted.filter((h) => h.problems.length > 0)
   const past = sorted.filter((h) => hadProblems(h.availability))
   const shown = filter === 'now' ? now : filter === 'past' ? past : sorted
   const stopped = hosts.filter((h) => h.status === 'stopped').length
+  const offline = hosts.filter((h) => h.status === 'offline').length
   const online = hosts.filter((h) => h.online && h.status !== 'stopped').length
   const active = hosts.length - stopped
   const avg = avgPct(hosts)
   const open = hosts.flatMap((h) => h.problems.map((p) => ({ ...p, host: h })))
     .sort((a, b) => b.severity - a.severity || a.opened_at - b.opened_at)
+  const crit = open.filter((p) => p.severity === 2).length
+  const warn = open.length - crit
+  const days = fleetDays(hosts)
+  const badDays = days.filter((d) => d === 'down').length
+  const showDevices = (f) => { setFilter(f); document.getElementById('devices')?.scrollIntoView({ behavior: 'smooth' }) }
 
   return (
     <>
-      <div className="ov-head">
-        <div className={`summary tone-${hl.tone}`}>
-          <h1 className="headline">{hl.text}</h1>
+      <div className="page-head">
+        <div>
+          <h1 className="headline">{greeting()}, {user?.login}</h1>
           <p className="lead">
-            На связи {online} из {active}{stopped > 0 && `, ещё ${stopped} ${plural(stopped, 'машина выключена', 'машины выключены', 'машин выключено')}`}.
-            {avg != null && ` Доступность за 30 дней ${pctText(avg)}.`}
-            {checkedAt && ` Обновлено в ${checkedAt.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}.`}
-            {error && <span className="inline-error"> Не удалось обновить: {error}</span>}
+            Что требует внимания сегодня
+            {checkedAt && <span className="muted">. Обновлено в {checkedAt.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</span>}
+            {error && <span className="inline-error">. Не удалось обновить: {error}</span>}
           </p>
+        </div>
+        <div className="head-btns">
+          <Link to="/add/proxmox" className="btn pill"><Icon name="layers" size={18} />Proxmox</Link>
+          <Link to="/add" className="btn primary pill"><Icon name="plus" size={18} />Сервер</Link>
+        </div>
+      </div>
+
+      <div className="stats">
+        <Stat featured title="Проблемы сейчас" value={open.length} to="/problems"
+          sub={open.length ? `${crit} ${plural(crit, 'авария', 'аварии', 'аварий')} · ${warn} ${plural(warn, 'предупреждение', 'предупреждения', 'предупреждений')}` : 'аварий и предупреждений нет'} />
+        <Stat title="Нет связи" value={offline} tone={offline ? 'bad' : ''} onClick={() => showDevices('now')}
+          sub={offline ? 'данных нет дольше 3 минут' : 'все устройства отвечают'} />
+        <Stat title="На связи" value={<>{online}<small> из {active}</small></>} onClick={() => showDevices('all')}
+          sub={stopped ? `ещё ${stopped} ${plural(stopped, 'машина выключена', 'машины выключены', 'машин выключено')}` : 'выключенных машин нет'} />
+        <Stat title="Доступность" value={pctText(avg)} tone={pctTone(avg)} onClick={() => showDevices('past')}
+          sub={`среднее за 30 дней, ${past.length} ${plural(past.length, 'устройство', 'устройства', 'устройств')} с проблемами`} />
+      </div>
+
+      <div className="row2">
+        <section className="card attn" aria-labelledby="attn-h">
+          <div className="card-head">
+            <h2 id="attn-h">Требуют внимания</h2>
+            {open.length > 0 ? <Link to="/problems" className="more-link">Все проблемы →</Link> : <span className="muted">0</span>}
+          </div>
+          {open.length === 0 ? <p className="all-good"><Icon name="check" size={18} />Всё под контролем</p> : (
+            <div className="probs">
+              {open.slice(0, 5).map((p) => (
+                <Link key={p.id} to={`/hosts/${p.host.id}`} className="prob">
+                  <span className={`badge s-${p.severity === 2 ? 'critical' : 'warning'}`}>{sevText[p.severity]}</span>
+                  <span><b>{p.host.name}</b>: {p.title}{p.ack_by && <span className="muted">. В работе у {p.ack_by}{p.ack_comment ? `: ${p.ack_comment}` : ''}</span>}</span>
+                  <span className="muted nowrap">{since(p.opened_at)}</span>
+                </Link>
+              ))}
+              {open.length > 5 && <Link to="/problems" className="prob more">Ещё {open.length - 5}</Link>}
+            </div>
+          )}
+        </section>
+        <section className="card dark av-card" aria-labelledby="av-h">
+          <h2 id="av-h">Доступность за 30 дней</h2>
+          <p className="sub">{badDays ? `${badDays} ${plural(badDays, 'день', 'дня', 'дней')} с простоем хотя бы одного устройства` : 'Ни одного дня с простоем'}</p>
+          <div className="big-num">{pctText(avg)}</div>
+          <div className="av-cells" role="img" aria-label={`Сводка по дням: ${badDays} дней с простоем`}>
+            {days.map((d, i) => <span key={i} className={`av-cell av-${d}`} />)}
+          </div>
+          <div className="av-labels"><span>30 дней назад</span><span>сегодня</span></div>
+        </section>
+      </div>
+
+      <div className="dev-head" id="devices">
+        <h2>Устройства</h2>
+        <div className="toolbar" role="group" aria-label="Фильтр">
+          <button className={filter === 'all' ? 'seg active' : 'seg'} onClick={() => setFilter('all')}>Все ({hosts.length})</button>
+          <button className={filter === 'now' ? 'seg active' : 'seg'} onClick={() => setFilter('now')}>Проблемы сейчас ({now.length})</button>
+          <button className={filter === 'past' ? 'seg active' : 'seg'} onClick={() => setFilter('past')}>Были за 30 дней ({past.length})</button>
         </div>
         <div className="toolbar" role="group" aria-label="Вид">
           <button className={viewMode === 'tiles' ? 'seg active' : 'seg'} onClick={() => pickView('tiles')}>Плитки</button>
           <button className={viewMode === 'table' ? 'seg active' : 'seg'} onClick={() => pickView('table')}>Таблица</button>
         </div>
-      </div>
-
-      {open.length > 0 && (
-        <div className="probs" aria-label="Активные проблемы">
-          {open.slice(0, 6).map((p) => (
-            <div key={p.id} className="prob">
-              <span className={`badge s-${p.severity === 2 ? 'critical' : 'warning'}`}>{sevText[p.severity]}</span>
-              <span><b>{p.host.name}</b>: {p.title}{p.ack_by && <span className="muted">. В работе у {p.ack_by}{p.ack_comment ? `: ${p.ack_comment}` : ''}</span>}</span>
-              <span className="muted nowrap">{since(p.opened_at)}</span>
-              <Link to={`/hosts/${p.host.id}`}>Открыть</Link>
-            </div>
-          ))}
-          {open.length > 6 && <div className="prob more"><Link to="/problems">Ещё {open.length - 6} — все проблемы</Link></div>}
-        </div>
-      )}
-
-      <div className="toolbar" role="group" aria-label="Фильтр">
-        <button className={filter === 'all' ? 'seg active' : 'seg'} onClick={() => setFilter('all')}>Все ({hosts.length})</button>
-        <button className={filter === 'now' ? 'seg active' : 'seg'} onClick={() => setFilter('now')}>Проблемы сейчас ({now.length})</button>
-        <button className={filter === 'past' ? 'seg active' : 'seg'} onClick={() => setFilter('past')}>Были за 30 дней ({past.length})</button>
       </div>
 
       {shown.length === 0 ? <p className="muted">Таких устройств нет.</p> : groups(shown).map((g) => (

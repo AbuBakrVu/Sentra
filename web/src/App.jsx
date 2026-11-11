@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import Icon from './Icons.jsx'
 import { api } from './api.js'
 import Overview from './pages/Overview.jsx'
 import HostPage from './pages/HostPage.jsx'
@@ -63,34 +64,121 @@ export default function App() {
   else if (path === '/add/proxmox') page = <AddProxmox />
   else if (path === '/settings') page = <Settings />
   else if (path === '/problems') page = <Problems />
-  else page = <Overview />
+  else page = <Overview user={user} />
 
-  const tab = (to, label) => {
-    const on = to === '/' ? path === '/' || path.startsWith('/hosts/') : path === to || path.startsWith(to + '/')
-    return <Link to={to} className={on ? 'nav-link active' : 'nav-link'} aria-current={on ? 'page' : undefined}>{label}</Link>
-  }
+  const title = host ? 'Устройство' : path === '/problems' ? 'Проблемы' : path.startsWith('/add') ? 'Подключение' : path === '/settings' ? 'Настройки' : 'Обзор'
 
   return (
     <div className="shell">
-      <header className="topbar">
-        <div className="topbar-inner">
-          <Link to="/" className="brand" aria-label="Sentra, обзор">
-            <svg width="22" height="22" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="11" fill="none" stroke="currentColor" strokeWidth="3" /><circle cx="16" cy="16" r="4" fill="currentColor" /></svg>
-            Sentra
-          </Link>
-          <nav className="nav">
-            {tab('/', 'Обзор')}
-            {tab('/problems', 'Проблемы')}
-            {tab('/add', 'Добавить')}
-            {tab('/settings', 'Настройки')}
-          </nav>
-          <div className="who">
-            <span>{user.login}</span>
-            <button className="link-btn" onClick={logout}>Выйти</button>
-          </div>
+      <Sidebar path={path} user={user} logout={logout} />
+      <div className="content">
+        <header className="topbar">
+          <span className="crumb">{title}</span>
+          <HostSearch />
+          <Link to="/add" className="btn dark pill"><Icon name="plus" size={18} />Добавить</Link>
+        </header>
+        <main className="main">{page}</main>
+      </div>
+    </div>
+  )
+}
+
+function useOpenCount() {
+  const [n, setN] = useState(0)
+  useEffect(() => {
+    let alive = true
+    const load = () => api.problems('open').then((l) => alive && setN(l.length)).catch(() => {})
+    load()
+    const t = setInterval(load, 30000)
+    return () => { alive = false; clearInterval(t) }
+  }, [])
+  return n
+}
+
+function Sidebar({ path, user, logout }) {
+  const open = useOpenCount()
+  const item = (to, icon, label, extra) => {
+    const on = to === '/' ? path === '/' || path.startsWith('/hosts/') : path === to
+    return (
+      <Link to={to} className={on ? 'side-link active' : 'side-link'} aria-current={on ? 'page' : undefined}>
+        <Icon name={icon} size={22} />{label}{extra}
+      </Link>
+    )
+  }
+  return (
+    <aside className="side">
+      <div className="side-user">
+        <span className="avatar" aria-hidden="true">{user.login.slice(0, 1).toUpperCase()}<i /></span>
+        <span><b>{user.login}</b><small>Администратор</small></span>
+        <Link to="/" className="side-brand" aria-label="Sentra, обзор">
+          <svg width="18" height="18" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="11" fill="none" stroke="currentColor" strokeWidth="3.5" /><circle cx="16" cy="16" r="4" fill="currentColor" /></svg>
+        </Link>
+      </div>
+      <nav className="side-nav" aria-label="Разделы">
+        {item('/', 'grid', 'Обзор')}
+        {item('/problems', 'alert', 'Проблемы', open > 0 && <span className="side-count">{open}</span>)}
+        <hr />
+        {item('/add', 'server', 'Сервер с агентом')}
+        {item('/add/proxmox', 'layers', 'Proxmox')}
+        <hr />
+        {item('/settings', 'gear', 'Настройки')}
+      </nav>
+      <div className="side-foot">
+        <Link to="/settings" className="icon-btn" aria-label="Настройки" title="Настройки"><Icon name="gear" /></Link>
+        <Link to="/add" className="icon-btn" aria-label="Добавить устройство" title="Добавить устройство"><Icon name="plus" /></Link>
+        <button className="icon-btn" onClick={logout} aria-label="Выйти" title="Выйти"><Icon name="logout" /></button>
+      </div>
+    </aside>
+  )
+}
+
+// Поиск по устройствам в шапке, Ctrl+K или ⌘K.
+function HostSearch() {
+  const [q, setQ] = useState('')
+  const [list, setList] = useState(null)
+  const [open, setOpen] = useState(false)
+  const [sel, setSel] = useState(0)
+  const ref = useRef(null)
+
+  useEffect(() => {
+    const on = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); ref.current?.focus() }
+    }
+    window.addEventListener('keydown', on)
+    return () => window.removeEventListener('keydown', on)
+  }, [])
+
+  const load = () => { if (!list) api.hosts().then(setList).catch(() => setList([])) }
+  const needle = q.trim().toLowerCase()
+  const found = !needle || !list ? [] : list.filter((h) =>
+    [h.name, h.inventory?.hostname, ...(h.inventory?.ips || []), h.meta?.node].filter(Boolean).some((x) => String(x).toLowerCase().includes(needle))).slice(0, 8)
+
+  const go = (h) => { setQ(''); setOpen(false); setList(null); ref.current?.blur(); navigate(`/hosts/${h.id}`) }
+  const mac = /Mac|iPhone|iPad/.test(navigator.platform)
+
+  return (
+    <div className="search">
+      <Icon name="search" size={18} />
+      <label className="sr-only" htmlFor="host-search">Поиск устройства</label>
+      <input id="host-search" ref={ref} value={q} placeholder="Поиск по устройствам…" autoComplete="off"
+        onFocus={() => { load(); setOpen(true) }} onBlur={() => setTimeout(() => setOpen(false), 150)}
+        onChange={(e) => { setQ(e.target.value); setSel(0); setOpen(true) }}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowDown') { e.preventDefault(); setSel((s) => Math.min(s + 1, found.length - 1)) }
+          if (e.key === 'ArrowUp') { e.preventDefault(); setSel((s) => Math.max(s - 1, 0)) }
+          if (e.key === 'Enter' && found[sel]) go(found[sel])
+          if (e.key === 'Escape') { setQ(''); ref.current?.blur() }
+        }} />
+      <kbd>{mac ? '⌘K' : 'Ctrl K'}</kbd>
+      {open && needle && list && (
+        <div className="search-pop" role="listbox">
+          {found.length === 0 ? <p className="muted">Ничего не нашлось</p> : found.map((h, i) => (
+            <button key={h.id} role="option" aria-selected={i === sel} className={i === sel ? 'sel' : ''} onMouseDown={(e) => e.preventDefault()} onClick={() => go(h)}>
+              <span className={`dot s-${h.status}`} aria-hidden="true" />{h.name}<small>{h.inventory?.ips?.[0] || h.meta?.node || ''}</small>
+            </button>
+          ))}
         </div>
-      </header>
-      <main className="main">{page}</main>
+      )}
     </div>
   )
 }
