@@ -46,6 +46,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	s.StartPollers(ctx)
+	s.StartInet(ctx)
 	s.StartEngine(ctx.Done())
 	srv := &http.Server{
 		Addr:              cfg.Listen,

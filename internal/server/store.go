@@ -64,11 +64,15 @@ CREATE TABLE IF NOT EXISTS pve_sources (
   summary TEXT NOT NULL DEFAULT '{}',
   created_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
 `
 
 // миграции колонок: SQLite не умеет ADD COLUMN IF NOT EXISTS
 var hostColumns = []struct{ name, def string }{
-	{"kind", "TEXT NOT NULL DEFAULT 'agent'"},     // agent, pve-node, pve-qemu, pve-lxc
+	{"kind", "TEXT NOT NULL DEFAULT 'agent'"},     // agent, pve-node, pve-qemu, pve-lxc, inet
 	{"source_id", "TEXT NOT NULL DEFAULT ''"},     // id подключения Proxmox
 	{"ext_id", "TEXT NOT NULL DEFAULT ''"},        // qemu/100, node/pve1
 	{"meta", "TEXT NOT NULL DEFAULT '{}'"},        // данные из Proxmox: узел, vmid, статус
@@ -117,6 +121,19 @@ func OpenStore(path string) (*Store, error) {
 		return nil, err
 	}
 	return &Store{db: db}, nil
+}
+
+// ---------- настройки ----------
+
+func (s *Store) Setting(key string) string {
+	var v string
+	s.db.QueryRow(`SELECT value FROM settings WHERE key=?`, key).Scan(&v)
+	return v
+}
+
+func (s *Store) SetSetting(key, value string) error {
+	_, err := s.db.Exec(`INSERT INTO settings(key, value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, key, value)
+	return err
 }
 
 // ---------- секреты ----------

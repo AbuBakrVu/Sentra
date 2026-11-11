@@ -381,3 +381,26 @@ code { font-family: ui-monospace, 'SF Mono', Consolas, monospace; font-size: 0.9
 .cmd-line { display: inline-block; background: #1D2620; color: #E6EDF5; padding: 4px 8px; border-radius: 4px; font-size: 13px; overflow-wrap: anywhere; }
 .steps .toolbar { margin: 10px 0 4px; }
 .steps .help { margin-top: 12px; }
+
+/* ---------- интернет-канал ---------- */
+.inet-strip { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 16px; margin-bottom: 12px; background: var(--surface); border: 1px solid var(--line-soft); border-radius: 18px; color: inherit; text-decoration: none; font-size: 14.5px; }
+.inet-strip:hover { border-color: #C9C9C3; }
+.inet-strip > svg:first-child { color: var(--night); }
+.inet-strip.s-warning { border-color: #EBD9AA; background: #FFFCF4; }
+.inet-strip.s-critical { border-color: #EFC2BC; background: #FFF8F7; }
+.inet-strip.s-critical .inet-now { color: var(--crit); font-weight: 500; }
+.inet-strip.s-warning .inet-now { color: var(--warn); }
+.inet-av { margin-left: auto; }
+.inet-outages { margin: 34px 0 0; }
+.inet-outages .dev-head .btn { font-size: 14px; }
+.inet-sum { margin: 0 0 12px; max-width: 80ch; }
+.inet-form { margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--line); max-width: 560px; }
+.form label.check { display: flex; align-items: center; gap: 10px; font-size: 15px; color: var(--ink); cursor: pointer; }
+.form label.check input { width: 18px; height: 18px; padding: 0; accent-color: var(--night); }
+.form .hint { font-size: 13px; color: var(--ink-2); }
+.tgts { border: 0; padding: 0; margin: 0; display: grid; gap: 8px; }
+.tgts legend { padding: 0; margin-bottom: 4px; font-size: 14px; color: var(--ink-2); }
+.tgt-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto; gap: 8px; }
+.tgts .link-btn { justify-self: start; }
+@media (max-width: 640px) { .inet-av { margin-left: 0; } .tgt-row { grid-template-columns: 1fr; } }
+.empty-inet { margin-top: 28px; }

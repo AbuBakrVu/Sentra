@@ -25,6 +25,9 @@ services:
       SENTRA_CERT_HOSTS: ${SENTRA_CERT_HOSTS:-}
       SENTRA_ADMIN_PASSWORD: ${SENTRA_ADMIN_PASSWORD:-}
       TZ: ${TZ:-Europe/Moscow}
+    sysctls:
+      # ping без прав root: нужен для проверки интернет-канала
+      net.ipv4.ping_group_range: "0 2147483647"
     volumes:
       - sentra-data:/var/lib/sentra
     restart: unless-stopped

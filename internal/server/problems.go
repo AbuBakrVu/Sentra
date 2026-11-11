@@ -167,6 +167,7 @@ type desired struct {
 	kind  string
 	sev   int
 	title string
+	since int64 // когда началось на самом деле; 0 — сейчас
 }
 
 type pending struct{ w, c time.Time }
@@ -176,6 +177,7 @@ type Engine struct {
 	mu   sync.Mutex
 	st   *Store
 	pend map[string]*pending
+	inet inetFails
 }
 
 func NewEngine(st *Store) *Engine {
@@ -245,6 +247,8 @@ func (e *Engine) Eval(h *Host, now time.Time) {
 	status, _ := h.Meta["status"].(string)
 	gone, _ := h.Meta["gone"].(float64)
 	switch {
+	case h.Kind == "inet":
+		keep = e.evalInet(h, now, open, want)
 	case pve && gone == 1:
 		// машины больше нет в Proxmox: всё закрываем
 	case now.Sub(time.Unix(h.LastSeen, 0)) > offlineAfter:
@@ -252,24 +256,24 @@ func (e *Engine) Eval(h *Host, now time.Time) {
 		if pve {
 			t = "Нет данных от Proxmox"
 		}
-		want["offline"] = desired{"down", 2, t}
+		want["offline"] = desired{"down", 2, t, 0}
 		keep = true
 	case h.Kind == "pve-node" && status != "online":
-		want["node_offline"] = desired{"down", 2, "Узел не в сети кластера"}
+		want["node_offline"] = desired{"down", 2, "Узел не в сети кластера", 0}
 	case pve && h.Meta["node_offline"] == true:
-		want["node_offline"] = desired{"down", 2, "Узел Proxmox не в сети"}
+		want["node_offline"] = desired{"down", 2, "Узел Proxmox не в сети", 0}
 	case pve && h.Kind != "pve-node" && status != "running":
-		want["stopped"] = desired{"stopped", 0, "Выключена"}
+		want["stopped"] = desired{"stopped", 0, "Выключена", 0}
 	default:
 		m := h.LastMetrics
 		if v, ok := m[proto.MCPUUsage].(float64); ok {
 			if l := e.level(h.ID, ruleCPU, v, now, false, open["cpu"]); l > 0 {
-				want["cpu"] = desired{"degraded", l, ruleCPU.title(v)}
+				want["cpu"] = desired{"degraded", l, ruleCPU.title(v), 0}
 			}
 		}
 		if v, ok := m[proto.MMemUsedPct].(float64); ok {
 			if l := e.level(h.ID, ruleMem, v, now, false, open["mem"]); l > 0 {
-				want["mem"] = desired{"degraded", l, ruleMem.title(v)}
+				want["mem"] = desired{"degraded", l, ruleMem.title(v), 0}
 			}
 		}
 		if fs, ok := m["fs"].(map[string]any); ok {
@@ -288,7 +292,7 @@ func (e *Engine) Eval(h *Host, now time.Time) {
 					if low {
 						t = fmt.Sprintf("Диск %s: свободно %s", mount, humanBytes(free))
 					}
-					want[r.key] = desired{"degraded", l, t}
+					want[r.key] = desired{"degraded", l, t, 0}
 				}
 			}
 		}
@@ -306,7 +310,11 @@ func (e *Engine) Eval(h *Host, now time.Time) {
 		if maint && d.kind != "stopped" {
 			continue // во время обслуживания новых проблем не заводим
 		}
-		if err := e.st.OpenProblem(h.ID, key, d.kind, d.sev, d.title, at); err != nil {
+		from := at
+		if d.since != 0 && d.since < at {
+			from = d.since
+		}
+		if err := e.st.OpenProblem(h.ID, key, d.kind, d.sev, d.title, from); err != nil {
 			log.Printf("открытие проблемы %s %s: %v", h.ID, key, err)
 		}
 	}

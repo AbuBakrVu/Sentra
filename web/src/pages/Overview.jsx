@@ -4,6 +4,7 @@ import { Link } from '../App.jsx'
 import { ago, plural, statusText } from '../format.js'
 import Icon from '../Icons.jsx'
 import AvailabilityBar, { hadProblems, pctText, pctTone } from '../Availability.jsx'
+import { inetStatusText, lossText, ms } from './Internet.jsx'
 
 const order = { critical: 0, offline: 1, warning: 2, waiting: 3, ok: 4, stopped: 5 }
 const sevText = { 1: 'Внимание', 2: 'Авария' }
@@ -204,12 +205,33 @@ function HostTable({ g }) {
   )
 }
 
+// Строка про интернет-канал под счётчиками.
+function InetStrip({ h }) {
+  const m = h.last_metrics || {}
+  const up = m.inet_up === 1
+  return (
+    <Link to="/internet" className={`inet-strip s-${h.status}`}>
+      <Icon name="globe" size={20} />
+      <b>Интернет</b>
+      <span className={`badge s-${h.status}`}>{inetStatusText[h.status]}</span>
+      <span className="inet-now">
+        {h.issues.length ? h.issues[0] : h.status === 'waiting' ? 'первая проверка займёт до минуты' : up ? `потери ${lossText(m.loss5)}, задержка ${ms(m.rtt5)}` : ''}
+      </span>
+      <span className="muted inet-av">за 30 дней <b className={`pct ${pctTone(h.availability?.pct)}`}>{pctText(h.availability?.pct)}</b></span>
+      <Icon name="arrow" size={18} />
+    </Link>
+  )
+}
+
 function readView() {
   try { return localStorage.getItem('sentra.view') || 'tiles' } catch { return 'tiles' }
 }
 
 export default function Overview({ user }) {
-  const { hosts, error, checkedAt } = useHosts()
+  const { hosts: all, error, checkedAt } = useHosts()
+  // интернет-канал — не устройство: у него своя строка и своя страница
+  const hosts = useMemo(() => all?.filter((h) => h.kind !== 'inet') ?? null, [all])
+  const inet = all?.find((h) => h.kind === 'inet' && h.status !== 'stopped')
   const [filter, setFilter] = useState('all')
   const [viewMode, setViewMode] = useState(readView)
   const pickView = (v) => { setViewMode(v); try { localStorage.setItem('sentra.view', v) } catch { /* приватный режим */ } }
@@ -229,6 +251,7 @@ export default function Overview({ user }) {
           <Link to="/add" className="btn primary">Добавить сервер</Link>
           <Link to="/add/proxmox" className="btn">Подключить Proxmox</Link>
         </div>
+        {inet && <div className="empty-inet"><InetStrip h={inet} /></div>}
       </div>
     )
   }
@@ -241,7 +264,7 @@ export default function Overview({ user }) {
   const online = hosts.filter((h) => h.online && h.status !== 'stopped').length
   const active = hosts.length - stopped
   const avg = avgPct(hosts)
-  const open = hosts.flatMap((h) => h.problems.map((p) => ({ ...p, host: h })))
+  const open = all.flatMap((h) => h.problems.map((p) => ({ ...p, host: h })))
     .sort((a, b) => b.severity - a.severity || a.opened_at - b.opened_at)
   const crit = open.filter((p) => p.severity === 2).length
   const warn = open.length - crit
@@ -276,6 +299,8 @@ export default function Overview({ user }) {
         <Stat title="Доступность" value={pctText(avg)} tone={pctTone(avg)} onClick={() => showDevices('past')}
           sub={`среднее за 30 дней, ${past.length} ${plural(past.length, 'устройство', 'устройства', 'устройств')} с проблемами`} />
       </div>
+
+      {inet && <InetStrip h={inet} />}
 
       <div className="row2">
         <section className="card attn" aria-labelledby="attn-h">

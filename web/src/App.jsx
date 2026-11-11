@@ -8,6 +8,7 @@ import AddProxmox from './pages/AddProxmox.jsx'
 import Settings from './pages/Settings.jsx'
 import Login from './pages/Login.jsx'
 import Problems from './pages/Problems.jsx'
+import Internet from './pages/Internet.jsx'
 
 // Минимальный роутер на History API: нам хватает четырёх экранов.
 export function navigate(to) {
@@ -59,7 +60,8 @@ export default function App() {
 
   let page
   const host = path.match(/^\/hosts\/([a-z0-9_-]+)$/)
-  if (host) page = <HostPage id={host[1]} />
+  if (path === '/internet' || host?.[1] === 'internet') page = <Internet />
+  else if (host) page = <HostPage id={host[1]} />
   else if (path === '/add') page = <AddServer />
   else if (path === '/add/proxmox') page = <AddProxmox />
   else if (path === '/settings') page = <Settings />
@@ -89,6 +91,7 @@ function useOpenCount() {
 const sections = [
   ['/', 'grid', 'Обзор'],
   ['/problems', 'alert', 'Проблемы'],
+  ['/internet', 'globe', 'Интернет'],
   ['/add', 'server', 'Сервер с агентом'],
   ['/add/proxmox', 'layers', 'Proxmox'],
   ['/settings', 'gear', 'Настройки'],
@@ -98,7 +101,8 @@ const sections = [
 function TopNav({ path, user, logout }) {
   const open = useOpenCount()
   const [menu, setMenu] = useState(false)
-  const isOn = (to) => (to === '/' ? path === '/' || path.startsWith('/hosts/') : path === to)
+  const inet = path === '/internet' || path === '/hosts/internet'
+  const isOn = (to) => (to === '/internet' ? inet : to === '/' ? path === '/' || (path.startsWith('/hosts/') && !inet) : path === to)
   useEffect(() => {
     if (!menu) return
     const close = (e) => { if (!e.target.closest?.('.me')) setMenu(false) }

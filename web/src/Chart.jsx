@@ -11,6 +11,7 @@ function fmt(unit, v) {
   if (v == null) return '—'
   if (unit === '%') return pct(v)
   if (unit === 'B/s') return bitrate(v)
+  if (unit === 'ms') return `${v.toLocaleString('ru-RU', { maximumFractionDigits: v < 10 ? 1 : 0 })} мс`
   return v.toLocaleString('ru-RU', { maximumFractionDigits: 2 })
 }
 
@@ -46,7 +47,7 @@ export default function Chart({ hostId, metric, range, title, refreshKey }) {
                 ? { day: 'numeric', month: 'short' }
                 : { hour: '2-digit', minute: '2-digit' }))
             } },
-          { stroke: '#6A6D67', grid: { stroke: '#E6E6E1' }, ticks: { show: false }, size: unit === 'B/s' ? 84 : 52,
+          { stroke: '#6A6D67', grid: { stroke: '#E6E6E1' }, ticks: { show: false }, size: unit === 'B/s' ? 84 : unit === 'ms' ? 64 : 52,
             font: '12px Onest, system-ui', values: (u, vals) => vals.map((v) => fmt(unit, v)) },
         ],
         series: [

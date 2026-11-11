@@ -44,6 +44,7 @@ type Server struct {
 	loginFails map[string][]time.Time
 	pve        *pvePoller
 	eng        *Engine
+	inet       *inetPoller
 }
 
 const offlineAfter = 3 * time.Minute
@@ -72,7 +73,7 @@ func New(cfg Config, web fs.FS) (*Server, *tls.Certificate, error) {
 		os.WriteFile(pf, []byte(pw+"\n"), 0o600)
 		log.Printf("Создан администратор: логин admin, пароль %s (сохранён в %s). Смените его после входа.", pw, pf)
 	}
-	s := &Server{cfg: cfg, st: st, vm: NewVM(cfg.VMURL), pin: pin, web: web, loginFails: map[string][]time.Time{}, pve: newPVEPoller(), eng: NewEngine(st)}
+	s := &Server{cfg: cfg, st: st, vm: NewVM(cfg.VMURL), pin: pin, web: web, loginFails: map[string][]time.Time{}, pve: newPVEPoller(), eng: NewEngine(st), inet: newInetPoller()}
 	return s, &cert, nil
 }
 
@@ -103,6 +104,10 @@ func (s *Server) Handler() http.Handler {
 	m.HandleFunc("POST /api/pve", s.auth(s.addPVE))
 	m.HandleFunc("DELETE /api/pve/{id}", s.auth(s.deletePVE))
 	m.HandleFunc("POST /api/pve/{id}/trust", s.auth(s.trustPVE))
+	m.HandleFunc("GET /api/inet", s.auth(s.getInet))
+	m.HandleFunc("PUT /api/inet", s.auth(s.putInet))
+	m.HandleFunc("GET /api/inet/outages", s.auth(s.inetOutages))
+	m.HandleFunc("GET /api/inet/report.csv", s.auth(s.inetReport))
 	m.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"ok": true, "version": s.cfg.Version})
 	})
@@ -457,11 +462,20 @@ func view(h *Host, open []*Problem) hostView {
 			v.Problems = append(v.Problems, p)
 		}
 	}
+	if h.Kind == "inet" && h.Meta["disabled"] == true {
+		v.Status = "stopped"
+		return v
+	}
 	if h.LastSeen == 0 {
 		v.Status = "waiting"
 		return v
 	}
 	v.Online = time.Since(time.Unix(h.LastSeen, 0)) < offlineAfter
+	if h.Kind == "inet" && !v.Online {
+		// коробка только что запустилась и ещё не успела проверить канал
+		v.Status = "waiting"
+		return v
+	}
 	pve := strings.HasPrefix(h.Kind, "pve-")
 	if gone, _ := h.Meta["gone"].(float64); pve && gone == 1 {
 		v.Online = false
@@ -584,6 +598,10 @@ func (s *Server) renameHost(w http.ResponseWriter, r *http.Request, _ *User) {
 }
 
 func (s *Server) deleteHost(w http.ResponseWriter, r *http.Request, _ *User) {
+	if r.PathValue("id") == inetHostID {
+		httpErr(w, 400, "проверка интернета отключается на странице «Интернет»")
+		return
+	}
 	if h, err := s.st.Host(r.PathValue("id")); err == nil && strings.HasPrefix(h.Kind, "pve-") {
 		if gone, _ := h.Meta["gone"].(float64); gone != 1 {
 			httpErr(w, 400, "машина есть в Proxmox и вернётся при следующем опросе. Удалите её в Proxmox или отключите весь Proxmox в разделе «Добавить»")
@@ -655,6 +673,11 @@ func (s *Server) chart(w http.ResponseWriter, r *http.Request, _ *User) {
 			{proto.MNetRx, func(l map[string]string) string { return strings.TrimSpace(l["iface"] + " приём") }},
 			{proto.MNetTx, func(l map[string]string) string { return strings.TrimSpace(l["iface"] + " передача") }},
 		}
+	case "inet_rtt":
+		unit = "ms"
+		qs = []chartQuery{{mInetRTT, func(l map[string]string) string { return l["target"] }}}
+	case "inet_loss":
+		qs = []chartQuery{{mInetLoss, func(l map[string]string) string { return l["target"] }}}
 	default:
 		httpErr(w, 400, "неизвестный график")
 		return
