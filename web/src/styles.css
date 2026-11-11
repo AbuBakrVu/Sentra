@@ -283,3 +283,13 @@ code { font-family: ui-monospace, 'SF Mono', Consolas, monospace; font-size: 0.9
 @media (max-width: 640px) {
   .prob { grid-template-columns: 1fr; gap: 4px; }
 }
+
+/* ---------- пошаговые инструкции ---------- */
+.howto { margin: 12px 0 14px; padding-left: 22px; display: grid; gap: 14px; }
+.howto > li { padding-left: 4px; line-height: 1.55; }
+.howto ul { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 2px; }
+.howto .why { margin: 6px 0 0; font-size: 14px; color: var(--ink-2); }
+.howto.cmds p { margin: 6px 0 0; }
+.cmd-line { display: inline-block; background: #1B2733; color: #E6EDF5; padding: 4px 8px; border-radius: 4px; font-size: 13px; overflow-wrap: anywhere; }
+.steps .toolbar { margin: 10px 0 4px; }
+.steps .help { margin-top: 12px; }

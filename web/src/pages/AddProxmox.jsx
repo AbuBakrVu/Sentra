@@ -15,9 +15,86 @@ export function AddTabs({ current }) {
   )
 }
 
-const tokenCmd = `pveum user add sentra@pve --comment "Sentra monitoring"
-pveum aclmod / -user sentra@pve -role PVEAuditor
-pveum user token add sentra@pve monitor --privsep 0`
+const cmds = [
+  {
+    cmd: 'pveum user add sentra@pve --comment "Sentra monitoring"',
+    what: 'Создаёт отдельного пользователя sentra во встроенной базе пользователей Proxmox (часть @pve).',
+    why: 'Чтобы не отдавать Sentra учётную запись root. Отдельного пользователя легко узнать в журнале и удалить, если мониторинг больше не нужен.',
+  },
+  {
+    cmd: 'pveum aclmod / -user sentra@pve -role PVEAuditor',
+    what: 'Выдаёт пользователю роль PVEAuditor на путь «/», то есть на весь кластер: все узлы, машины и хранилища.',
+    why: 'PVEAuditor — роль только для просмотра. Sentra видит состояние и нагрузку, но не может включить, выключить, удалить машину или поменять настройки.',
+  },
+  {
+    cmd: 'pveum user token add sentra@pve monitor --privsep 0',
+    what: 'Создаёт для пользователя API-токен с именем monitor и показывает его ID (full-tokenid) и секрет (value).',
+    why: 'Токен — это ключ для программ: Sentra входит по нему, а не по паролю. Флаг --privsep 0 значит, что у токена те же права, что у пользователя, то есть только просмотр. Без флага права пришлось бы выдавать токену отдельной командой.',
+  },
+]
+const tokenCmd = cmds.map((c) => c.cmd).join('\n')
+
+function WebSteps() {
+  return (
+    <ol className="howto">
+      <li>
+        <b>Откройте веб-интерфейс Proxmox</b> по адресу <code>https://IP-узла:8006</code> и войдите под root (realm «Linux PAM»).
+      </li>
+      <li>
+        <b>Создайте пользователя.</b> Слева выберите <b>Datacenter</b>, затем <b>Permissions › Users</b> и нажмите <b>Add</b>.
+        <ul>
+          <li>User name: <code>sentra</code></li>
+          <li>Realm: <b>Proxmox VE authentication server</b></li>
+          <li>Пароль задайте любой: входить им не придётся</li>
+          <li>Comment: <code>Sentra monitoring</code>, нажмите <b>Add</b></li>
+        </ul>
+        <p className="why">Зачем: отдельный пользователь вместо root. Его легко найти в журнале и удалить, если мониторинг больше не нужен.</p>
+      </li>
+      <li>
+        <b>Дайте права только на просмотр.</b> В <b>Datacenter › Permissions</b> нажмите <b>Add › User Permission</b>.
+        <ul>
+          <li>Path: <code>/</code> (весь кластер)</li>
+          <li>User: <code>sentra@pve</code></li>
+          <li>Role: <b>PVEAuditor</b></li>
+          <li>Галочка <b>Propagate</b> включена, нажмите <b>Add</b></li>
+        </ul>
+        <p className="why">Зачем: PVEAuditor видит состояние узлов, машин и хранилищ, но не может ничего включить, выключить или изменить. «Propagate» распространяет права на все узлы и машины внутри кластера.</p>
+      </li>
+      <li>
+        <b>Создайте токен.</b> В <b>Datacenter › Permissions › API Tokens</b> нажмите <b>Add</b>.
+        <ul>
+          <li>User: <code>sentra@pve</code></li>
+          <li>Token ID: <code>monitor</code></li>
+          <li>Снимите галочку <b>Privilege Separation</b></li>
+          <li>Expire: оставьте <b>never</b>, нажмите <b>Add</b></li>
+        </ul>
+        <p className="why">Зачем: токен — это ключ для программ, Sentra входит по нему, а не по паролю. Без снятой галочки «Privilege Separation» у токена не будет прав пользователя, и Sentra покажет «у токена нет прав».</p>
+      </li>
+      <li>
+        <b>Скопируйте Token ID и Secret</b> из появившегося окна. Token ID будет <code>sentra@pve!monitor</code>. Secret показывается <b>один раз</b>: если окно закрылось, удалите токен и создайте заново.
+      </li>
+    </ol>
+  )
+}
+
+function ConsoleSteps() {
+  return (
+    <>
+      <p>Откройте консоль любого узла: <b>Shell</b> в веб-интерфейсе Proxmox или SSH под root. Выполните три команды по очереди или все сразу:</p>
+      <CopyBlock text={tokenCmd} />
+      <ol className="howto cmds">
+        {cmds.map((c) => (
+          <li key={c.cmd}>
+            <code className="cmd-line">{c.cmd}</code>
+            <p>{c.what}</p>
+            <p className="why">Зачем: {c.why}</p>
+          </li>
+        ))}
+      </ol>
+      <p className="muted small">Последняя команда выведет таблицу: <b>full-tokenid</b> — это ID токена (<code>sentra@pve!monitor</code>), <b>value</b> — секрет. Секрет показывается один раз, скопируйте его сразу.</p>
+    </>
+  )
+}
 
 function CopyBlock({ text }) {
   const [copied, setCopied] = useState(false)
@@ -98,6 +175,7 @@ export default function AddProxmox() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const [done, setDone] = useState(null)
+  const [how, setHow] = useState('web')
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value })
 
   async function submit(e) {
@@ -118,10 +196,21 @@ export default function AddProxmox() {
 
       <ol className="steps">
         <li>
-          <h2>Создайте токен только для чтения</h2>
-          <p>В консоли любого узла (Shell в веб-интерфейсе или SSH под root):</p>
-          <CopyBlock text={tokenCmd} />
-          <p className="muted small">Последняя команда покажет <b>full-tokenid</b> и <b>value</b>. Value показывается один раз: скопируйте его сразу. Роль PVEAuditor даёт только просмотр, менять машины этим токеном нельзя.</p>
+          <h2>Создайте в Proxmox доступ только для чтения</h2>
+          <p>Sentra нужен пользователь с правом только смотреть и ключ доступа (API-токен) для него. Так Sentra видит узлы, машины и хранилища, но ничего не может в них изменить. Это можно сделать мышкой в веб-интерфейсе Proxmox или тремя командами в консоли, результат одинаковый.</p>
+          <div className="toolbar" role="group" aria-label="Как создать доступ">
+            <button type="button" className={how === 'web' ? 'seg active' : 'seg'} onClick={() => setHow('web')}>В веб-интерфейсе</button>
+            <button type="button" className={how === 'console' ? 'seg active' : 'seg'} onClick={() => setHow('console')}>В консоли</button>
+          </div>
+          {how === 'web' ? <WebSteps /> : <ConsoleSteps />}
+          <details className="help">
+            <summary>Что Sentra делает с этим доступом и как его отозвать</summary>
+            <ul>
+              <li>Раз в 30 секунд Sentra читает список узлов, машин и хранилищ и их нагрузку. Больше ничего: команд Proxmox она не отправляет.</li>
+              <li>Секрет токена хранится только в базе этой коробки.</li>
+              <li>Отозвать доступ: в Proxmox <b>Datacenter › Permissions › API Tokens</b> удалите токен <code>monitor</code>, или в консоли выполните <code>pveum user token remove sentra@pve monitor</code>. Чтобы удалить и пользователя: <code>pveum user delete sentra@pve</code>.</li>
+            </ul>
+          </details>
         </li>
         <li>
           <h2>Укажите адрес и токен</h2>
