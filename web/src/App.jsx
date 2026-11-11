@@ -66,19 +66,10 @@ export default function App() {
   else if (path === '/problems') page = <Problems />
   else page = <Overview user={user} />
 
-  const title = host ? 'Устройство' : path === '/problems' ? 'Проблемы' : path.startsWith('/add') ? 'Подключение' : path === '/settings' ? 'Настройки' : 'Обзор'
-
   return (
     <div className="shell">
-      <Sidebar path={path} user={user} logout={logout} />
-      <div className="content">
-        <header className="topbar">
-          <span className="crumb">{title}</span>
-          <HostSearch />
-          <Link to="/add" className="btn dark pill"><Icon name="plus" size={18} />Добавить</Link>
-        </header>
-        <main className="main">{page}</main>
-      </div>
+      <TopNav path={path} user={user} logout={logout} />
+      <main className="main">{page}</main>
     </div>
   )
 }
@@ -95,40 +86,65 @@ function useOpenCount() {
   return n
 }
 
-function Sidebar({ path, user, logout }) {
+const sections = [
+  ['/', 'grid', 'Обзор'],
+  ['/problems', 'alert', 'Проблемы'],
+  ['/add', 'server', 'Сервер с агентом'],
+  ['/add/proxmox', 'layers', 'Proxmox'],
+  ['/settings', 'gear', 'Настройки'],
+]
+
+// Верхнее меню: активный раздел подписан, остальные — иконки с подсказкой.
+function TopNav({ path, user, logout }) {
   const open = useOpenCount()
-  const item = (to, icon, label, extra) => {
-    const on = to === '/' ? path === '/' || path.startsWith('/hosts/') : path === to
-    return (
-      <Link to={to} className={on ? 'side-link active' : 'side-link'} aria-current={on ? 'page' : undefined}>
-        <Icon name={icon} size={22} />{label}{extra}
-      </Link>
-    )
-  }
+  const [menu, setMenu] = useState(false)
+  const isOn = (to) => (to === '/' ? path === '/' || path.startsWith('/hosts/') : path === to)
+  useEffect(() => {
+    if (!menu) return
+    const close = (e) => { if (!e.target.closest?.('.me')) setMenu(false) }
+    const esc = (e) => e.key === 'Escape' && setMenu(false)
+    document.addEventListener('click', close)
+    document.addEventListener('keydown', esc)
+    return () => { document.removeEventListener('click', close); document.removeEventListener('keydown', esc) }
+  }, [menu])
+
   return (
-    <aside className="side">
-      <div className="side-user">
-        <span className="avatar" aria-hidden="true">{user.login.slice(0, 1).toUpperCase()}<i /></span>
-        <span><b>{user.login}</b><small>Администратор</small></span>
-        <Link to="/" className="side-brand" aria-label="Sentra, обзор">
-          <svg width="18" height="18" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="11" fill="none" stroke="currentColor" strokeWidth="3.5" /><circle cx="16" cy="16" r="4" fill="currentColor" /></svg>
-        </Link>
-      </div>
-      <nav className="side-nav" aria-label="Разделы">
-        {item('/', 'grid', 'Обзор')}
-        {item('/problems', 'alert', 'Проблемы', open > 0 && <span className="side-count">{open}</span>)}
-        <hr />
-        {item('/add', 'server', 'Сервер с агентом')}
-        {item('/add/proxmox', 'layers', 'Proxmox')}
-        <hr />
-        {item('/settings', 'gear', 'Настройки')}
+    <header className="topnav">
+      <Link to="/" className="brand" aria-label="Sentra, обзор">
+        <svg width="22" height="22" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="11" fill="none" stroke="currentColor" strokeWidth="3.5" /><circle cx="16" cy="16" r="4" fill="currentColor" /></svg>
+        Sentra
+      </Link>
+      <nav className="pillnav" aria-label="Разделы">
+        {sections.map(([to, icon, label]) => {
+          const on = isOn(to)
+          return (
+            <Link key={to} to={to} className={on ? 'pn active' : 'pn'} aria-current={on ? 'page' : undefined}
+              aria-label={on ? undefined : label} title={on ? undefined : label}>
+              <Icon name={icon} size={19} />{on && <span>{label}</span>}
+              {to === '/problems' && open > 0 && <i className="pn-count">{open}</i>}
+            </Link>
+          )
+        })}
       </nav>
-      <div className="side-foot">
-        <Link to="/settings" className="icon-btn" aria-label="Настройки" title="Настройки"><Icon name="gear" /></Link>
-        <Link to="/add" className="icon-btn" aria-label="Добавить устройство" title="Добавить устройство"><Icon name="plus" /></Link>
-        <button className="icon-btn" onClick={logout} aria-label="Выйти" title="Выйти"><Icon name="logout" /></button>
+      <div className="tn-right">
+        <HostSearch />
+        <Link to="/problems" className="icon-btn bell" aria-label={open ? `Проблемы: ${open}` : 'Проблем нет'} title={open ? `Открытых проблем: ${open}` : 'Проблем нет'}>
+          <Icon name="bell" size={19} />{open > 0 && <i />}
+        </Link>
+        <div className="me">
+          <button className="avatar" aria-haspopup="menu" aria-expanded={menu} aria-label={`Пользователь ${user.login}`} onClick={() => setMenu((v) => !v)}>
+            {user.login.slice(0, 1).toUpperCase()}
+          </button>
+          {menu && (
+            <div className="me-pop" role="menu">
+              <p><b>{user.login}</b><small>Администратор</small></p>
+              <Link to="/settings" role="menuitem" onClick={() => setMenu(false)}><Icon name="gear" size={18} />Настройки</Link>
+              <button role="menuitem" onClick={logout}><Icon name="logout" size={18} />Выйти</button>
+            </div>
+          )}
+        </div>
       </div>
-    </aside>
+    </header>
   )
 }
 
@@ -160,7 +176,7 @@ function HostSearch() {
     <div className="search">
       <Icon name="search" size={18} />
       <label className="sr-only" htmlFor="host-search">Поиск устройства</label>
-      <input id="host-search" ref={ref} value={q} placeholder="Поиск по устройствам…" autoComplete="off"
+      <input id="host-search" ref={ref} value={q} placeholder="Поиск устройства…" autoComplete="off"
         onFocus={() => { load(); setOpen(true) }} onBlur={() => setTimeout(() => setOpen(false), 150)}
         onChange={(e) => { setQ(e.target.value); setSel(0); setOpen(true) }}
         onKeyDown={(e) => {
