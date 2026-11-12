@@ -91,6 +91,25 @@ Sentra читает Proxmox VE через API, на узлы и в машины 
 
 Коробке нужен доступ к порту 8006 узла. В кластере достаточно одного узла: Sentra увидит все.
 
+### Диски внутри виртуальных машин
+
+Proxmox не знает, насколько заполнен диск внутри ВМ (у контейнеров LXC знает). Sentra спрашивает об этом гостевой агент QEMU раз в 5 минут. Нужно:
+
+1. В машине установить агент: Linux — `apt install qemu-guest-agent && systemctl enable --now qemu-guest-agent`, Windows — VirtIO-драйверы с образа `virtio-win`.
+2. В Proxmox: машина › Options › QEMU Guest Agent › Enabled, затем выключить и включить машину. Перезагрузки изнутри мало.
+3. Выдать токену право читать агент:
+
+   ```bash
+   # Proxmox 9
+   pveum role add SentraGuest -privs VM.GuestAgent.Audit
+   # Proxmox 8: отдельного права на чтение нет; VM.Monitor открывает и монитор QEMU
+   pveum role add SentraGuest -privs VM.Monitor
+
+   pveum aclmod /vms -user sentra@pve -role SentraGuest
+   ```
+
+У машин без агента вместо диска Sentra пишет, чего не хватает: «нужен гостевой агент QEMU» или «у токена нет права на гостевой агент». Память у ВМ видна и без агента; точное значение изнутри Proxmox получает через драйвер Balloon (в Linux встроен, в Windows ставится из `virtio-win`).
+
 Что собирается каждые 30 секунд:
 
 | Объект | Метрики |

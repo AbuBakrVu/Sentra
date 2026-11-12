@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 	"regexp"
 	"strings"
 	"sync"
@@ -78,7 +77,7 @@ func (s *Server) pollPVE(ctx context.Context, src *PVESource) {
 	defer cancel()
 	started := time.Now()
 	err := s.collectPVE(ctx, src)
-	if d := time.Since(started); d > pveSlowPoll || os.Getenv("SENTRA_DEBUG_PVE") != "" {
+	if d := time.Since(started); d > pveSlowPoll || debugPVE() {
 		log.Printf("proxmox %s: опрос занял %.1f с", src.Name, d.Seconds())
 	}
 	if err != nil {
@@ -112,6 +111,7 @@ func (s *Server) collectPVE(ctx context.Context, src *PVESource) error {
 	}
 
 	seen := map[string]bool{}
+	var guests []guestJob // запущенные ВМ: спросить у гостевого агента про диски
 	sum := map[string]any{"nodes": 0, "qemu": 0, "lxc": 0, "running": 0}
 	inc := func(k string) { sum[k] = sum[k].(int) + 1 }
 
@@ -212,7 +212,13 @@ func (s *Server) collectPVE(ctx context.Context, src *PVESource) error {
 					add(proto.MMemUsedPct, round2(100*float64(r.Mem)/float64(r.MaxMem)))
 				}
 				// у QEMU заполнение диска видно только через гостевой агент: disk=0
-				if r.Disk > 0 && r.MaxDisk > 0 {
+				if kind == "pve-qemu" {
+					key := src.ID + "|" + r.ID
+					st, fs := s.guest.state(key, now)
+					meta["guest_agent"] = st
+					samples = append(samples, guestSamples(fs)...)
+					guests = append(guests, guestJob{hostID: key, node: r.Node, vmid: int(r.VMID)})
+				} else if r.Disk > 0 && r.MaxDisk > 0 {
 					add(proto.MFsUsedPct, round2(100*float64(r.Disk)/float64(r.MaxDisk)), "mount", "/")
 					add(proto.MFsFree, float64(r.MaxDisk-r.Disk), "mount", "/")
 					add(proto.MFsTotal, float64(r.MaxDisk), "mount", "/")
@@ -256,6 +262,7 @@ func (s *Server) collectPVE(ctx context.Context, src *PVESource) error {
 		}
 	}
 	s.st.PVEResult(src.ID, true, "", sum)
+	s.pollGuests(ctx, src, cl, guests)
 	return nil
 }
 

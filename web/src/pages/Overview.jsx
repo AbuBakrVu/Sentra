@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../api.js'
 import { Link } from '../App.jsx'
-import { ago, plural, statusText } from '../format.js'
+import { ago, plural, statusText, guestHint } from '../format.js'
 import Icon from '../Icons.jsx'
 import AvailabilityBar, { avText, avTone, hadProblems, pctText, pctTone } from '../Availability.jsx'
 import Fresh from '../Fresh.jsx'
@@ -152,7 +152,7 @@ function Tile({ h }) {
           <Meter label="CPU" value={m.cpu_usage_percent} />
           <Meter label="Память" value={m.mem_used_percent} />
           {h.kind === 'pve-qemu' && !m.disk_max_mount
-            ? <div className="meter"><span className="meter-label">Диск</span><span className="meter-hint">видно с гостевым агентом</span></div>
+            ? <div className="meter"><span className="meter-label">Диск</span><span className="meter-hint">{guestHint[h.meta?.guest_agent] || guestHint.noagent}</span></div>
             : <Meter label="Диск" value={m.disk_max_percent} title={m.disk_max_mount ? `Самый заполненный раздел: ${m.disk_max_mount}` : undefined} />}
         </div>
       )}

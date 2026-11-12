@@ -45,6 +45,7 @@ type Server struct {
 	pve        *pvePoller
 	eng        *Engine
 	inet       *inetPoller
+	guest      *guestPoller
 }
 
 const offlineAfter = 3 * time.Minute
@@ -73,7 +74,7 @@ func New(cfg Config, web fs.FS) (*Server, *tls.Certificate, error) {
 		os.WriteFile(pf, []byte(pw+"\n"), 0o600)
 		log.Printf("Создан администратор: логин admin, пароль %s (сохранён в %s). Смените его после входа.", pw, pf)
 	}
-	s := &Server{cfg: cfg, st: st, vm: NewVM(cfg.VMURL), pin: pin, web: web, loginFails: map[string][]time.Time{}, pve: newPVEPoller(), eng: NewEngine(st), inet: newInetPoller()}
+	s := &Server{cfg: cfg, st: st, vm: NewVM(cfg.VMURL), pin: pin, web: web, loginFails: map[string][]time.Time{}, pve: newPVEPoller(), eng: NewEngine(st), inet: newInetPoller(), guest: newGuestPoller()}
 	return s, &cert, nil
 }
 
@@ -666,7 +667,13 @@ func (s *Server) chart(w http.ResponseWriter, r *http.Request, _ *User) {
 		unit = ""
 		qs = []chartQuery{{proto.MLoad1, fixed("1 мин")}, {proto.MLoad5, fixed("5 мин")}, {proto.MLoad15, fixed("15 мин")}}
 	case "disk":
-		qs = []chartQuery{{proto.MFsUsedPct, func(l map[string]string) string { return l["mount"] }}}
+		qs = []chartQuery{{proto.MFsUsedPct, func(l map[string]string) string {
+			// «C:» в легенде превратился бы в «C::»
+			if m := l["mount"]; len(m) == 2 && m[1] == ':' {
+				return "диск " + m[:1]
+			}
+			return l["mount"]
+		}}}
 	case "net":
 		unit = "B/s"
 		qs = []chartQuery{

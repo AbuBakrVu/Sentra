@@ -55,3 +55,12 @@ export const statusText = {
   stopped: 'Выключена',
   maintenance: 'Обслуживание',
 }
+
+// Почему у ВМ Proxmox не виден диск: состояние гостевого агента QEMU (meta.guest_agent).
+export const guestHint = {
+  pending: 'проверяем гостевой агент',
+  noagent: 'нужен гостевой агент QEMU',
+  forbidden: 'у токена нет права на гостевой агент',
+  error: 'гостевой агент не ответил',
+  ok: 'гостевой агент не сообщил разделы',
+}

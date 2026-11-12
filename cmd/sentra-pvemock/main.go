@@ -15,6 +15,9 @@
 //	curl -k 'https://127.0.0.1:8006/mock?vm=105&stop=1'       выключить машину (start=1 — включить)
 //	curl -k 'https://127.0.0.1:8006/mock?vm=105&gone=1'       машина пропала из кластера
 //	curl -k 'https://127.0.0.1:8006/mock?node=pve2&offline=1' узел выпал из кластера (online=1 — вернуть)
+//	curl -k 'https://127.0.0.1:8006/mock?vm=105&disk=95'      диск / внутри ВМ 105 заполнен на 95% (через гостевой агент)
+//	curl -k 'https://127.0.0.1:8006/mock?vm=105&agent=0'      у ВМ 105 нет гостевого агента (agent=1 — есть)
+//	curl -k 'https://127.0.0.1:8006/mock?forbid=1'            у токена нет права на гостевой агент (forbid=0 — есть)
 //	curl -k 'https://127.0.0.1:8006/mock?reset=1'             убрать все сценарии
 package main
 
@@ -65,6 +68,11 @@ type vm struct {
 	netIn   float64
 	netOut  float64
 	started time.Time
+	agent   bool    // в ВМ работает гостевой агент QEMU
+	windows bool    // гостевая ОС: диски C: и D: вместо / и /var
+	fsRoot  float64 // заполнение главного раздела, доля
+	fsData  float64
+	pinDisk float64
 }
 
 type node struct {
@@ -91,6 +99,7 @@ type cluster struct {
 	delay   time.Duration
 	started time.Time
 	calls   map[string]int
+	forbid  bool // токену не выдано право на гостевой агент
 }
 
 var roles = []string{"web", "db", "app", "1c", "rdp", "file", "mail", "dc", "backup", "dev", "test", "vpn", "mon", "crm", "git", "proxy"}
@@ -115,6 +124,9 @@ func newCluster(nodes, vms int, seed int64, stopped float64) *cluster {
 			running: r.Float64() >= stopped, base: 0.02 + r.Float64()*0.35, memBase: 0.2 + r.Float64()*0.55,
 			pinCPU: -1, pinMem: -1, started: time.Now().Add(-time.Duration(r.Intn(40*24)) * time.Hour),
 		}
+		v.agent = r.Float64() < 0.7
+		v.windows = r.Float64() < 0.25
+		v.fsRoot, v.fsData, v.pinDisk = 0.2+r.Float64()*0.6, 0.1+r.Float64()*0.7, -1
 		if r.Float64() < 0.25 {
 			v.kind = "lxc"
 			v.disk = v.maxdisk * (0.1 + r.Float64()*0.6) // у контейнеров Proxmox знает заполнение диска
@@ -253,8 +265,9 @@ func (c *cluster) control(w http.ResponseWriter, r *http.Request) {
 	msg := []string{}
 	if q.Get("reset") != "" {
 		for _, v := range c.vms {
-			v.pinCPU, v.pinMem, v.gone = -1, -1, false
+			v.pinCPU, v.pinMem, v.pinDisk, v.gone = -1, -1, -1, false
 		}
+		c.forbid = false
 		for _, n := range c.nodes {
 			n.offline = false
 		}
@@ -281,6 +294,17 @@ func (c *cluster) control(w http.ResponseWriter, r *http.Request) {
 			}
 			msg = append(msg, fmt.Sprintf("%s: память %s%%", v.name, q.Get("mem")))
 		}
+		if p, err := strconv.ParseFloat(q.Get("disk"), 64); err == nil {
+			v.pinDisk = clamp(p/100, 0, 1)
+			if p < 0 {
+				v.pinDisk = -1
+			}
+			msg = append(msg, fmt.Sprintf("%s: главный раздел %s%%", v.name, q.Get("disk")))
+		}
+		if a := q.Get("agent"); a != "" {
+			v.agent = a != "0"
+			msg = append(msg, fmt.Sprintf("%s: гостевой агент = %v", v.name, v.agent))
+		}
 		if q.Get("stop") != "" {
 			v.running = false
 			msg = append(msg, v.name+": выключена")
@@ -293,6 +317,10 @@ func (c *cluster) control(w http.ResponseWriter, r *http.Request) {
 			v.gone = q.Get("gone") != "0"
 			msg = append(msg, fmt.Sprintf("%s: пропала из кластера = %v", v.name, v.gone))
 		}
+	}
+	if f := q.Get("forbid"); f != "" {
+		c.forbid = f != "0"
+		msg = append(msg, fmt.Sprintf("нет права на гостевой агент = %v", c.forbid))
 	}
 	if n := c.nodeByName(q.Get("node")); n != nil {
 		if q.Get("offline") != "" {
@@ -311,8 +339,8 @@ func (c *cluster) control(w http.ResponseWriter, r *http.Request) {
 		if v.running && !v.gone {
 			running++
 		}
-		if v.pinCPU >= 0 || v.pinMem >= 0 || v.gone {
-			pinned = append(pinned, fmt.Sprintf("  %d %s: cpu=%v mem=%v gone=%v running=%v", v.id, v.name, pct(v.pinCPU), pct(v.pinMem), v.gone, v.running))
+		if v.pinCPU >= 0 || v.pinMem >= 0 || v.pinDisk >= 0 || v.gone {
+			pinned = append(pinned, fmt.Sprintf("  %d %s: cpu=%v mem=%v disk=%v gone=%v running=%v", v.id, v.name, pct(v.pinCPU), pct(v.pinMem), pct(v.pinDisk), v.gone, v.running))
 		}
 	}
 	var off []string
@@ -332,7 +360,13 @@ func (c *cluster) control(w http.ResponseWriter, r *http.Request) {
 	for _, m := range msg {
 		fmt.Fprintln(w, "→", m)
 	}
-	fmt.Fprintf(w, "узлов: %d, машин: %d, запущено: %d, узлы не в сети: %v\n", len(c.nodes), len(c.vms), running, off)
+	agents := 0
+	for _, v := range c.vms {
+		if v.kind == "qemu" && v.agent {
+			agents++
+		}
+	}
+	fmt.Fprintf(w, "узлов: %d, машин: %d, запущено: %d, ВМ с гостевым агентом: %d, узлы не в сети: %v, нет права на агент: %v\n", len(c.nodes), len(c.vms), running, agents, off, c.forbid)
 	if len(pinned) > 0 {
 		fmt.Fprintln(w, "сценарии:")
 		fmt.Fprintln(w, strings.Join(pinned, "\n"))
@@ -364,6 +398,20 @@ func (c *cluster) api(w http.ResponseWriter, r *http.Request) {
 		data = map[string]any{"version": "8.2.4", "release": "8.2", "repoid": "faa83925"}
 	case path == "/cluster/resources":
 		data = c.resources()
+	case strings.HasPrefix(path, "/nodes/") && strings.HasSuffix(path, "/agent/get-fsinfo"):
+		key = "/nodes/*/qemu/*/agent/get-fsinfo"
+		c.mu.Lock()
+		c.calls[key]++
+		c.mu.Unlock()
+		res, code, msg := c.fsinfo(path)
+		if code != 200 {
+			http.Error(w, msg, code)
+			return
+		}
+		data = map[string]any{"result": res}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"data": data})
+		return
 	case strings.HasPrefix(path, "/nodes/") && strings.HasSuffix(path, "/status"):
 		key = "/nodes/*/status"
 		st, ok := c.nodeStatus(strings.TrimSuffix(strings.TrimPrefix(path, "/nodes/"), "/status"))
@@ -411,6 +459,52 @@ func defaultCertPath(listen string) string {
 	}
 	port := listen[strings.LastIndex(listen, ":")+1:]
 	return filepath.Join(dir, "pvemock-"+port+".pem")
+}
+
+// fsinfo отвечает как гостевой агент: /nodes/{узел}/qemu/{vmid}/agent/get-fsinfo.
+func (c *cluster) fsinfo(path string) (any, int, string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.forbid {
+		return nil, 403, "Permission check failed (/vms/..., VM.GuestAgent.Audit)"
+	}
+	p := strings.Split(strings.Trim(path, "/"), "/") // nodes, узел, qemu, vmid, agent, get-fsinfo
+	if len(p) != 6 {
+		return nil, 400, "bad path"
+	}
+	id, _ := strconv.Atoi(p[3])
+	v := c.byID[id]
+	if v == nil || v.gone || v.node != p[1] || v.kind != "qemu" {
+		return nil, 500, fmt.Sprintf("Configuration file 'nodes/%s/qemu-server/%s.conf' does not exist", p[1], p[3])
+	}
+	if !v.running {
+		return nil, 500, fmt.Sprintf("VM %d is not running", id)
+	}
+	if !v.agent {
+		return nil, 500, "No QEMU guest agent configured"
+	}
+	root := v.fsRoot
+	if v.pinDisk >= 0 {
+		root = v.pinDisk
+	}
+	fs := func(name, mp, typ string, total, used float64) map[string]any {
+		return map[string]any{"name": name, "mountpoint": mp, "type": typ, "total-bytes": int64(total), "used-bytes": int64(used),
+			"disk": []map[string]any{{"bus-type": "scsi", "target": 0, "unit": 0}}}
+	}
+	if v.windows {
+		return []map[string]any{
+			fs("\\\\?\\Volume{1}", "System Reserved", "NTFS", 0.5*gib, 0.03*gib),
+			fs("\\\\?\\Volume{2}", "C:\\", "NTFS", v.maxdisk*0.6, v.maxdisk*0.6*root),
+			fs("\\\\?\\Volume{3}", "D:\\", "NTFS", v.maxdisk*0.4, v.maxdisk*0.4*v.fsData),
+		}, 200, ""
+	}
+	return []map[string]any{
+		fs("sda1", "/", "ext4", v.maxdisk*0.7, v.maxdisk*0.7*root),
+		fs("sda1", "/var/lib/docker/overlay2/x/merged", "overlay", v.maxdisk*0.7, v.maxdisk*0.7*root),
+		fs("sda2", "/boot", "ext4", 1*gib, 0.25*gib),
+		fs("sdb1", "/var/lib/data", "xfs", v.maxdisk*0.3, v.maxdisk*0.3*v.fsData),
+		fs("loop0", "/snap/core22/1380", "squashfs", 0.08*gib, 0.08*gib),
+	}, 200, ""
 }
 
 func selfSigned() tls.Certificate {

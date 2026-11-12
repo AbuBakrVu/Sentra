@@ -204,9 +204,21 @@ export default function AddProxmox() {
           </div>
           {how === 'web' ? <WebSteps /> : <ConsoleSteps />}
           <details className="help">
+            <summary>Необязательно: диски внутри виртуальных машин</summary>
+            <p>Proxmox не знает, насколько заполнен диск внутри ВМ: это знает только её система. Sentra спрашивает об этом гостевой агент QEMU. Для этого токену нужно ещё одно право, а в машине должен работать агент.</p>
+            <ul>
+              <li><b>Proxmox 9:</b> право <code>VM.GuestAgent.Audit</code>, только чтение сведений от агента.
+                <CopyBlock text={'pveum role add SentraGuest -privs VM.GuestAgent.Audit\npveum aclmod /vms -user sentra@pve -role SentraGuest'} /></li>
+              <li><b>Proxmox 8:</b> отдельного права на чтение нет, нужно <code>VM.Monitor</code>. Учтите, что оно открывает и монитор QEMU, то есть больше, чем просмотр.
+                <CopyBlock text={'pveum role add SentraGuest -privs VM.Monitor\npveum aclmod /vms -user sentra@pve -role SentraGuest'} /></li>
+              <li><b>В машине:</b> Linux — <code>apt install qemu-guest-agent</code>, Windows — VirtIO-драйверы с образа <code>virtio-win</code>. В Proxmox: машина › Options › QEMU Guest Agent › Enabled, затем выключить и включить машину.</li>
+            </ul>
+            <p>Без этого Sentra покажет у ВМ процессор, память и сеть, а вместо диска — подсказку, чего не хватает. Версию Proxmox показывает команда <code>pveversion</code>.</p>
+          </details>
+          <details className="help">
             <summary>Что Sentra делает с этим доступом и как его отозвать</summary>
             <ul>
-              <li>Раз в 30 секунд Sentra читает список узлов, машин и хранилищ и их нагрузку. Больше ничего: команд Proxmox она не отправляет.</li>
+              <li>Раз в 30 секунд Sentra читает список узлов, машин и хранилищ и их нагрузку. Если выдано право на гостевой агент, раз в 5 минут спрашивает у него заполнение дисков ВМ. Больше ничего: команд Proxmox она не отправляет.</li>
               <li>Секрет токена хранится только в базе этой коробки.</li>
               <li>Отозвать доступ: в Proxmox <b>Datacenter › Permissions › API Tokens</b> удалите токен <code>monitor</code>, или в консоли выполните <code>pveum user token remove sentra@pve monitor</code>. Чтобы удалить и пользователя: <code>pveum user delete sentra@pve</code>.</li>
             </ul>
