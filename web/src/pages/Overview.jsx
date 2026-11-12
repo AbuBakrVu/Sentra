@@ -29,7 +29,7 @@ function bytesShort(b) {
 }
 
 // Группы на обзоре: серверы с агентом, затем каждый узел Proxmox со своими машинами.
-function groups(list) {
+export function groups(list) {
   const out = new Map()
   for (const h of list) {
     let key, title, src
@@ -167,8 +167,41 @@ function nowText(h) {
   return 'В порядке'
 }
 
-function HostTable({ g }) {
+const sorters = {
+  name: (h) => h.name.toLowerCase(),
+  cpu: (h) => (h.online && h.status !== 'stopped' ? h.last_metrics?.cpu_usage_percent ?? -1 : -1),
+  mem: (h) => (h.online && h.status !== 'stopped' ? h.last_metrics?.mem_used_percent ?? -1 : -1),
+  disk: (h) => (h.online && h.status !== 'stopped' ? h.last_metrics?.disk_max_percent ?? -1 : -1),
+  av: (h) => (h.availability?.young ? 101 : h.availability?.pct ?? 101),
+}
+
+function sortItems(items, sort) {
+  if (!sort) return items
+  const f = sorters[sort.key]
+  return items.slice().sort((a, b) => {
+    const x = f(a), y = f(b)
+    const c = typeof x === 'string' ? x.localeCompare(y, 'ru') : x - y
+    return sort.dir * c || a.name.localeCompare(b.name, 'ru')
+  })
+}
+
+function SortTh({ k, sort, setSort, className = '', children }) {
+  const on = sort?.key === k
+  // числа сначала по убыванию: интереснее, кто занял больше всего
+  const first = k === 'name' || k === 'av' ? 1 : -1
+  const next = () => setSort(on ? (sort.dir === first ? { key: k, dir: -first } : null) : { key: k, dir: first })
+  return (
+    <th className={className} aria-sort={on ? (sort.dir > 0 ? 'ascending' : 'descending') : undefined}>
+      <button type="button" className={on ? 'th-sort on' : 'th-sort'} onClick={next}>
+        {children}<i aria-hidden="true">{on ? (sort.dir > 0 ? '↑' : '↓') : '↕'}</i>
+      </button>
+    </th>
+  )
+}
+
+function HostTable({ g, sort, setSort }) {
   const pct = (v) => (v == null ? '—' : `${Math.round(v)}%`)
+  const th = { sort, setSort }
   return (
     <div className="tbl-box ov-table">
       <table>
@@ -177,10 +210,14 @@ function HostTable({ g }) {
           <col style={{ width: '6%' }} /><col style={{ width: '20%' }} /><col style={{ width: '7%' }} /><col style={{ width: '19%' }} />
         </colgroup>
         <thead>
-          <tr><th className="grp-th">{g.title}</th><th>Тип</th><th className="num">CPU</th><th className="num">Память</th><th className="num">Диск</th><th>Доступность, 30 дней</th><th className="num">%</th><th>Сейчас</th></tr>
+          <tr>
+            <SortTh k="name" {...th} className="grp-th">{g.title}</SortTh><th>Тип</th>
+            <SortTh k="cpu" {...th} className="num">CPU</SortTh><SortTh k="mem" {...th} className="num">Память</SortTh><SortTh k="disk" {...th} className="num">Диск</SortTh>
+            <th>Доступность, 30 дней</th><SortTh k="av" {...th} className="num">%</SortTh><th>Сейчас</th>
+          </tr>
         </thead>
         <tbody>
-          {g.items.map((h) => {
+          {sortItems(g.items, sort).map((h) => {
             const m = h.last_metrics || {}
             const live = h.online && h.status !== 'stopped'
             return (
@@ -200,6 +237,103 @@ function HostTable({ g }) {
       </table>
     </div>
   )
+}
+
+// ---------- большие группы ----------
+
+// С какого размера группа сворачивается: до этого все плитки помещаются на один-два ряда.
+export const COMPACT_FROM = 9
+
+const dotText = { ok: 'в порядке', warning: 'предупреждение', critical: 'авария', offline: 'нет связи', waiting: 'ждём данные', stopped: 'выключена' }
+export const needsEye = (h) => h.problems.length > 0 || ['critical', 'offline', 'warning'].includes(h.status)
+
+// Карта группы: один квадратик на машину. Порядок постоянный (по имени),
+// чтобы квадратик машины не прыгал по карте при смене состояния.
+export function DotMap({ items, big = false }) {
+  const list = items.slice().sort((a, b) => (kindOrder[a.kind] ?? 2) - (kindOrder[b.kind] ?? 2) || a.name.localeCompare(b.name, 'ru', { numeric: true }))
+  return (
+    <div className={big ? 'dotmap big' : 'dotmap'}>
+      {list.map((h) => {
+        const label = `${h.name}: ${h.issues[0] ? h.issues[0].toLowerCase() : dotText[h.status]}`
+        return big
+          ? <span key={h.id} className={`dm s-${h.status}${h.kind === 'pve-node' ? ' node' : ''}`} title={label} />
+          : <Link key={h.id} to={`/hosts/${h.id}`} className={`dm s-${h.status}${h.kind === 'pve-node' ? ' node' : ''}`} title={label} aria-label={label} />
+      })}
+    </div>
+  )
+}
+
+function counts(items) {
+  const c = { bad: 0, warn: 0, ok: 0, stopped: 0 }
+  for (const h of items) {
+    if (h.status === 'stopped') c.stopped++
+    else if (h.status === 'critical' || h.status === 'offline') c.bad++
+    else if (h.status === 'warning' || h.problems.length) c.warn++
+    else c.ok++
+  }
+  return c
+}
+
+// Группа плитками. Маленькая группа — как раньше. Большая — карточка: сводка узла,
+// карта всех машин и строки только про машины с проблемами. По кнопке карточка
+// раскрывается на всю ширину и показывает все машины плитками.
+function GroupTiles({ g, shown, open, toggle }) {
+  const compact = g.items.length >= COMPACT_FROM
+  if (!compact) {
+    return (
+      <section className="group" aria-labelledby={`g-${g.key}`}>
+        <div className="group-head"><h2 id={`g-${g.key}`}>{g.title}</h2><p>{g.note}</p></div>
+        <div className="grid">{shown.map((h) => <Tile key={h.id} h={h} />)}</div>
+      </section>
+    )
+  }
+  const c = counts(g.items)
+  const node = g.items.find((h) => h.kind === 'pve-node')
+  const nm = node?.last_metrics || {}
+  const pct = (v) => (v == null ? '—' : `${Math.round(v)}%`)
+  const eye = shown.filter((h) => h.kind !== 'pve-node' && needsEye(h))
+    .sort((a, b) => order[a.status] - order[b.status] || a.name.localeCompare(b.name, 'ru'))
+  const tone = c.bad ? 'bad' : c.warn ? 'warn' : 'ok'
+  return (
+    <section className={`gcard t-${tone}${open ? ' open' : ''}`} aria-labelledby={`g-${g.key}`}>
+      <div className="gcard-head">
+        <h2 id={`g-${g.key}`}>{node ? <Link to={`/hosts/${node.id}`}>{g.title}</Link> : g.title}</h2>
+        <p className="gh-counts">
+          {c.bad > 0 && <span className="gc bad">{c.bad} {plural(c.bad, 'авария', 'аварии', 'аварий')}</span>}
+          {c.warn > 0 && <span className="gc warn">{c.warn} с предупр.</span>}
+          <span className="gc">{c.ok} в порядке</span>
+          {c.stopped > 0 && <span className="gc off">{c.stopped} выкл.</span>}
+        </p>
+      </div>
+      <p className="gcard-sub">
+        {g.note}
+        {node && node.online && <> · узел: CPU <b>{pct(nm.cpu_usage_percent)}</b>, память <b>{pct(nm.mem_used_percent)}</b>{nm.disk_max_mount && <>, диск <b className={nm.disk_max_percent > 85 ? 'hot' : ''}>{pct(nm.disk_max_percent)}</b></>}</>}
+        {node && node.issues.length > 0 && <span className="gcard-node-bad"> · {node.issues[0]}</span>}
+      </p>
+      <DotMap items={g.items} />
+      {!open && (eye.length > 0 ? (
+        <ul className="gcard-probs">
+          {eye.slice(0, 4).map((h) => (
+            <li key={h.id}>
+              <Link to={`/hosts/${h.id}`} className={`gp s-${h.status}`}>
+                <span className={`dot s-${h.status}`} aria-hidden="true" /><b>{h.name}</b>
+                <span className="gp-what">{h.issues[0] || statusText[h.status]}</span>
+              </Link>
+            </li>
+          ))}
+          {eye.length > 4 && <li className="muted gp-more">и ещё {eye.length - 4} с проблемами</li>}
+        </ul>
+      ) : <p className="gcard-calm">Все запущенные машины в порядке.</p>)}
+      {open && <div className="grid">{shown.map((h) => <Tile key={h.id} h={h} />)}</div>}
+      <button type="button" className="link-btn group-more" onClick={toggle} aria-expanded={!!open}>
+        {open ? 'Свернуть' : `Все машины плитками (${shown.length})`}
+      </button>
+    </section>
+  )
+}
+
+function readOpenGroups() {
+  try { return JSON.parse(localStorage.getItem('sentra.openGroups') || '{}') } catch { return {} }
 }
 
 // Строка про интернет-канал под счётчиками.
@@ -249,6 +383,16 @@ export default function Overview() {
   const inet = all?.find((h) => h.kind === 'inet' && h.status !== 'stopped')
   const [filter, setFilter] = useState('all')
   const [viewMode, setViewMode] = useState(readView)
+  const [showStopped, setShowStopped] = useState(() => { try { return localStorage.getItem('sentra.stopped') === '1' } catch { return false } })
+  const [openGroups, setOpenGroups] = useState(readOpenGroups)
+  const [sort, setSort] = useState(null)
+  const pickStopped = (v) => { setShowStopped(v); try { localStorage.setItem('sentra.stopped', v ? '1' : '0') } catch { /* приватный режим */ } }
+  const toggleGroup = (k) => setOpenGroups((o) => {
+    const n = { ...o, [k]: !o[k] }
+    if (!n[k]) delete n[k]
+    try { localStorage.setItem('sentra.openGroups', JSON.stringify(n)) } catch { /* приватный режим */ }
+    return n
+  })
   const pickView = (v) => { setViewMode(v); try { localStorage.setItem('sentra.view', v) } catch { /* приватный режим */ } }
 
   const sorted = useMemo(() => (hosts || []).slice().sort((a, b) =>
@@ -273,7 +417,13 @@ export default function Overview() {
 
   const now = sorted.filter((h) => h.problems.length > 0)
   const past = sorted.filter((h) => hadProblems(h.availability))
-  const shown = filter === 'now' ? now : filter === 'past' ? past : sorted
+  const byFilter = filter === 'now' ? now : filter === 'past' ? past : sorted
+  // выключенные машины в списке по умолчанию не показываем: на карте группы они видны серыми
+  const visible = (h) => showStopped || h.status !== 'stopped' || filter !== 'all'
+  const inFilter = new Set(byFilter.filter(visible).map((h) => h.id))
+  const allGroups = groups(sorted)
+    .map((g) => ({ g, shown: g.items.filter((h) => inFilter.has(h.id)) }))
+    .filter(({ g, shown }) => shown.length > 0 || (filter === 'all' && g.items.length >= COMPACT_FROM))
   const stopped = hosts.filter((h) => h.status === 'stopped').length
   const offline = hosts.filter((h) => h.status === 'offline').length
   const online = hosts.filter((h) => h.online && h.status !== 'stopped').length
@@ -346,25 +496,23 @@ export default function Overview() {
           <button className={filter === 'now' ? 'seg active' : 'seg'} onClick={() => setFilter('now')}>Проблемы сейчас ({now.length})</button>
           <button className={filter === 'past' ? 'seg active' : 'seg'} onClick={() => setFilter('past')}>Были за 30 дней ({past.length})</button>
         </div>
+        {stopped > 0 && filter === 'all' && (
+          <label className="chk-pill"><input type="checkbox" checked={showStopped} onChange={(e) => pickStopped(e.target.checked)} />Выключенные ({stopped})</label>
+        )}
         <div className="toolbar" role="group" aria-label="Вид">
           <button className={viewMode === 'tiles' ? 'seg active' : 'seg'} onClick={() => pickView('tiles')}>Плитки</button>
           <button className={viewMode === 'table' ? 'seg active' : 'seg'} onClick={() => pickView('table')}>Таблица</button>
         </div>
       </div>
 
-      {shown.length === 0 ? <p className="muted">Таких устройств нет.</p> : groups(shown).map((g) => (
+      {allGroups.length === 0 && <p className="muted">Таких устройств нет.</p>}
+      <div className={viewMode === 'table' ? '' : 'groups'}>
+      {allGroups.map(({ g, shown }) => (
         viewMode === 'table'
-          ? <section key={g.key} className="group"><HostTable g={g} /></section>
-          : (
-            <section key={g.key} className="group" aria-labelledby={`g-${g.key}`}>
-              <div className="group-head">
-                <h2 id={`g-${g.key}`}>{g.title}</h2>
-                <p>{g.note}</p>
-              </div>
-              <div className="grid">{g.items.map((h) => <Tile key={h.id} h={h} />)}</div>
-            </section>
-          )
+          ? (shown.length > 0 && <section key={g.key} className="group"><HostTable g={{ ...g, items: shown }} sort={sort} setSort={setSort} /></section>)
+          : <GroupTiles key={g.key} g={g} shown={shown} open={openGroups[g.key]} toggle={() => toggleGroup(g.key)} />
       ))}
+      </div>
       <p className="av-legend">
         <span><span className="av-cell av-ok" />всё работало</span>
         <span><span className="av-cell av-warn" />были предупреждения</span>
