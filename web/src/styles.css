@@ -583,3 +583,35 @@ a.dm:hover, a.dm:focus-visible { outline: 2px solid var(--ink); outline-offset: 
   .gcard.folded { padding-bottom: 14px; }
   .gcard.folded > :not(.gcard-head) { display: none; }
 }
+
+/* ---------- таблица: свернуть группу, ширина столбцов ---------- */
+.ov-table th { position: relative; }
+.ov-table th, .ov-table td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.grp-cell { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; }
+.grp-toggle { display: inline-flex; align-items: center; gap: 6px; min-width: 0; font: inherit; font-weight: 600; color: var(--ink); background: none; border: 0; padding: 0; cursor: pointer; }
+.grp-toggle svg { flex: none; color: var(--ink-2); transition: transform 0.15s; }
+.closed .grp-toggle svg { transform: rotate(-90deg); }
+.grp-name { overflow: hidden; text-overflow: ellipsis; }
+.grp-toggle:hover .grp-name { text-decoration: underline; }
+.grp-count { font-size: 12px; font-weight: 500; color: var(--ink-2); background: #ECECE8; border-radius: 999px; padding: 1px 8px; }
+.ov-table.closed thead th:not(.grp-th) { color: transparent; }
+.ov-table.closed thead th:not(.grp-th) .th-sort { visibility: hidden; }
+.grp-folded td { white-space: normal; padding-top: 12px; padding-bottom: 12px; }
+.grp-sum { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.grp-sum .gh-counts { margin: 0 !important; }
+.grp-sum .dotmap { flex: 1; min-width: 200px; margin: 0; padding: 0; border: 0; background: none; }
+.col-grip { position: absolute; top: 0; right: 0; bottom: 0; width: 9px; cursor: col-resize; z-index: 2; touch-action: none; }
+.col-grip::after { content: ''; position: absolute; top: 25%; bottom: 25%; right: 3px; width: 2px; border-radius: 1px; background: var(--line); opacity: 0; transition: opacity 0.1s; }
+.ov-table thead:hover .col-grip::after { opacity: 1; }
+.col-grip:hover::after, .col-grip:focus-visible::after, .col-dragging .col-grip::after { opacity: 1; background: var(--night); }
+.col-grip:focus-visible { outline: none; }
+body.col-dragging { cursor: col-resize; user-select: none; }
+.tbl-tools { display: flex; gap: 6px 18px; flex-wrap: wrap; align-items: center; margin: 0 0 12px; font-size: 14px; }
+.tbl-tools .muted { font-size: 13px; }
+@media (max-width: 640px) {
+  .col-grip, .tbl-tools .muted { display: none; }
+  /* на телефоне от заголовка таблицы остаётся только название группы с кнопкой */
+  .ov-table thead, .ov-table thead tr { display: block; background: none; border: 0; padding: 0; margin: 0; }
+  .ov-table thead th:not(.grp-th) { display: none; }
+  .ov-table thead th.grp-th { display: block; padding: 0 2px 8px; border: 0; }
+}

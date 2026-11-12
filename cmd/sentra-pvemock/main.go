@@ -26,6 +26,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/json"
+	"encoding/pem"
 	"flag"
 	"fmt"
 	"log"
@@ -33,6 +34,8 @@ import (
 	"math/big"
 	mrand "math/rand"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -380,6 +383,36 @@ func (c *cluster) api(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]any{"data": data})
 }
 
+// loadOrCreateCert хранит сертификат в файле. Sentra запоминает отпечаток
+// сертификата Proxmox, и новый сертификат после перезапуска заглушки она
+// справедливо отвергла бы как подмену.
+func loadOrCreateCert(path string) tls.Certificate {
+	if path != "" {
+		if c, err := tls.LoadX509KeyPair(path, path); err == nil {
+			return c
+		}
+	}
+	c := selfSigned()
+	if path != "" {
+		der, _ := x509.MarshalECPrivateKey(c.PrivateKey.(*ecdsa.PrivateKey))
+		out := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: c.Certificate[0]})
+		out = append(out, pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: der})...)
+		if err := os.WriteFile(path, out, 0o600); err != nil {
+			log.Printf("не удалось сохранить сертификат в %s: %v (после перезапуска отпечаток сменится)", path, err)
+		}
+	}
+	return c
+}
+
+func defaultCertPath(listen string) string {
+	dir := os.TempDir()
+	if st, err := os.Stat("/var/lib/sentra"); err == nil && st.IsDir() {
+		dir = "/var/lib/sentra" // в контейнере коробки: переживает перезапуск
+	}
+	port := listen[strings.LastIndex(listen, ":")+1:]
+	return filepath.Join(dir, "pvemock-"+port+".pem")
+}
+
 func selfSigned() tls.Certificate {
 	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	tpl := &x509.Certificate{
@@ -398,7 +431,11 @@ func main() {
 	stopped := flag.Float64("stopped", 0.12, "доля выключенных машин")
 	seed := flag.Int64("seed", 7, "зерно случайных чисел: одинаковое зерно — одинаковый кластер")
 	delay := flag.Duration("delay", 0, "задержка ответа API, например 300ms: как у медленного кластера")
+	certPath := flag.String("cert", "", "файл сертификата (по умолчанию /var/lib/sentra/pvemock-<порт>.pem или во временной папке)")
 	flag.Parse()
+	if *certPath == "" {
+		*certPath = defaultCertPath(*listen)
+	}
 	if *nodes < 1 || *vms < 0 {
 		log.Fatal("нужен хотя бы один узел")
 	}
@@ -417,7 +454,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api2/json/", c.api)
 	mux.HandleFunc("/mock", c.control)
-	srv := &http.Server{Addr: *listen, Handler: mux, TLSConfig: &tls.Config{Certificates: []tls.Certificate{selfSigned()}}}
+	srv := &http.Server{Addr: *listen, Handler: mux, TLSConfig: &tls.Config{Certificates: []tls.Certificate{loadOrCreateCert(*certPath)}}}
 	log.Printf("поддельный Proxmox: %d узлов, %d машин, слушаю https://%s", *nodes, *vms, strings.TrimPrefix(*listen, ":"))
 	log.Printf("в Sentra: «Добавить › Proxmox», адрес этой машины и порт %s, ID токена и секрет любые", strings.TrimPrefix(*listen, ":"))
 	log.Fatal(srv.ListenAndServeTLS("", ""))

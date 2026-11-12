@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../api.js'
 import { Link } from '../App.jsx'
 import { ago, plural, statusText } from '../format.js'
@@ -190,51 +190,175 @@ function sortItems(items, sort) {
   })
 }
 
-function SortTh({ k, sort, setSort, className = '', children }) {
+function useSort(k, sort, setSort) {
   const on = sort?.key === k
   // числа сначала по убыванию: интереснее, кто занял больше всего
   const first = k === 'name' || k === 'av' ? 1 : -1
   const next = () => setSort(on ? (sort.dir === first ? { key: k, dir: -first } : null) : { key: k, dir: first })
+  return { on, next, arrow: on ? (sort.dir > 0 ? '↑' : '↓') : '↕' }
+}
+
+function SortTh({ k, sort, setSort, className = '', grip, children }) {
+  const { on, next, arrow } = useSort(k, sort, setSort)
   return (
     <th className={className} aria-sort={on ? (sort.dir > 0 ? 'ascending' : 'descending') : undefined}>
       <button type="button" className={on ? 'th-sort on' : 'th-sort'} onClick={next}>
-        {children}<i aria-hidden="true">{on ? (sort.dir > 0 ? '↑' : '↓') : '↕'}</i>
+        {children}<i aria-hidden="true">{arrow}</i>
       </button>
+      {grip}
     </th>
   )
 }
 
-function HostTable({ g, sort, setSort }) {
-  const pct = (v) => (v == null ? '—' : `${Math.round(v)}%`)
-  const th = { sort, setSort }
+function SortIcon({ k, sort, setSort, label }) {
+  const { on, next, arrow } = useSort(k, sort, setSort)
   return (
-    <div className="tbl-box ov-table">
-      <table>
-        <colgroup>
-          <col style={{ width: '20%' }} /><col style={{ width: '15%' }} /><col style={{ width: '6%' }} /><col style={{ width: '7%' }} />
-          <col style={{ width: '6%' }} /><col style={{ width: '20%' }} /><col style={{ width: '7%' }} /><col style={{ width: '19%' }} />
-        </colgroup>
+    <button type="button" className={on ? 'th-sort on' : 'th-sort'} onClick={next} aria-label={`Сортировать ${label}`} title={`Сортировать ${label}`}>
+      <i aria-hidden="true">{arrow}</i>
+    </button>
+  )
+}
+
+// Ширины столбцов таблицы в процентах. Сумма всегда 100, и таблица не вылезает вбок:
+// расширяем столбец — место забирается у столбцов справа по очереди, пока они не
+// упрутся в минимум; сужаем — освободившееся место получает правый сосед.
+export const COLS_DEFAULT = [17, 15, 6, 7, 6, 19, 9, 21]
+// меньше этого столбец не сужается: в нём должно помещаться значение, например «100%»
+const COL_MIN = [9, 7, 5, 6, 5, 8, 7, 8]
+
+function resizeCol(start, i, d) {
+  const w = start.slice()
+  if (d < 0) {
+    d = Math.max(COL_MIN[i] - w[i], d)
+    w[i] += d
+    w[i + 1] -= d
+    return w
+  }
+  let left = d
+  for (let k = i + 1; k < w.length && left > 0; k++) {
+    const take = Math.max(0, Math.min(left, w[k] - COL_MIN[k]))
+    w[k] -= take
+    left -= take
+  }
+  w[i] += d - left
+  return w
+}
+
+export function readCols() {
+  try {
+    const w = JSON.parse(localStorage.getItem('sentra.cols') || 'null')
+    if (Array.isArray(w) && w.length === COLS_DEFAULT.length && Math.abs(w.reduce((a, b) => a + b, 0) - 100) < 0.5) return w
+  } catch { /* нет сохранённых */ }
+  return COLS_DEFAULT
+}
+
+export function saveCols(w) {
+  try {
+    if (w === COLS_DEFAULT) localStorage.removeItem('sentra.cols')
+    else localStorage.setItem('sentra.cols', JSON.stringify(w))
+  } catch { /* приватный режим */ }
+}
+
+// Ручка на правой границе заголовка. Двойной щелчок возвращает ширины по умолчанию.
+function ColGrip({ i, cols, setCols, tableRef }) {
+  const down = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const tw = tableRef.current?.getBoundingClientRect().width || 1
+    const x0 = e.clientX
+    const start = cols
+    let last = start
+    const move = (ev) => {
+      last = resizeCol(start, i, ((ev.clientX - x0) / tw) * 100)
+      setCols(last)
+    }
+    const up = () => {
+      document.removeEventListener('pointermove', move)
+      document.removeEventListener('pointerup', up)
+      document.body.classList.remove('col-dragging')
+      saveCols(last)
+    }
+    document.addEventListener('pointermove', move)
+    document.addEventListener('pointerup', up)
+    document.body.classList.add('col-dragging')
+  }
+  // с клавиатуры: стрелки двигают границу на 1%
+  const key = (e) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+    e.preventDefault()
+    const next = resizeCol(cols, i, e.key === 'ArrowRight' ? 1 : -1)
+    setCols(next)
+    saveCols(next)
+  }
+  return (
+    <span className="col-grip" role="separator" aria-orientation="vertical" aria-label="Изменить ширину столбца" tabIndex={0}
+      title="Потяните, чтобы изменить ширину. Двойной щелчок — ширина по умолчанию"
+      onPointerDown={down} onKeyDown={key} onClick={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => { e.stopPropagation(); setCols(COLS_DEFAULT); saveCols(COLS_DEFAULT) }} />
+  )
+}
+
+function HostTable({ g, sort, setSort, closed, onToggle, cols, setCols }) {
+  const pct = (v) => (v == null ? '—' : `${Math.round(v)}%`)
+  const tableRef = useRef(null)
+  const th = { sort, setSort }
+  const grip = (i) => <ColGrip i={i} cols={cols} setCols={setCols} tableRef={tableRef} />
+  const c = counts(g.items)
+  return (
+    <div className={`tbl-box ov-table${closed ? ' closed' : ''}`}>
+      <table ref={tableRef}>
+        <colgroup>{cols.map((w, i) => <col key={i} style={{ width: `${w}%` }} />)}</colgroup>
         <thead>
           <tr>
-            <SortTh k="name" {...th} className="grp-th">{g.title}</SortTh><th>Тип</th>
-            <SortTh k="cpu" {...th} className="num">CPU</SortTh><SortTh k="mem" {...th} className="num">Память</SortTh><SortTh k="disk" {...th} className="num">Диск</SortTh>
-            <th>Доступность, 30 дней</th><SortTh k="av" {...th} className="num">%</SortTh><th>Сейчас</th>
+            <th className="grp-th">
+              <span className="grp-cell">
+                <button type="button" className="grp-toggle" aria-expanded={!closed} onClick={onToggle}
+                  title={closed ? 'Развернуть' : 'Свернуть'}>
+                  <Icon name="chevron" size={16} /><span className="grp-name">{g.title}</span>
+                  {closed && <span className="grp-count">{g.items.length}</span>}
+                </button>
+                {!closed && <SortIcon k="name" {...th} label="по имени" />}
+              </span>
+              {grip(0)}
+            </th>
+            <th>Тип{grip(1)}</th>
+            <SortTh k="cpu" {...th} className="num" grip={grip(2)}>CPU</SortTh>
+            <SortTh k="mem" {...th} className="num" grip={grip(3)}>Память</SortTh>
+            <SortTh k="disk" {...th} className="num" grip={grip(4)}>Диск</SortTh>
+            <th>Доступность, 30 дней{grip(5)}</th>
+            <SortTh k="av" {...th} className="num" grip={grip(6)}>%</SortTh>
+            <th>Сейчас</th>
           </tr>
         </thead>
         <tbody>
-          {sortItems(g.items, sort).map((h) => {
+          {closed ? (
+            <tr className="grp-folded">
+              <td colSpan={8}>
+                <div className="grp-sum">
+                  <span className="gh-counts">
+                    {c.bad > 0 && <span className="gc bad">{c.bad} {plural(c.bad, 'авария', 'аварии', 'аварий')}</span>}
+                    {c.warn > 0 && <span className="gc warn">{c.warn} с предупр.</span>}
+                    <span className="gc">{c.ok} в порядке</span>
+                    {c.stopped > 0 && <span className="gc off">{c.stopped} выкл.</span>}
+                  </span>
+                  <DotMap items={g.items} />
+                </div>
+              </td>
+            </tr>
+          ) : sortItems(g.items, sort).map((h) => {
             const m = h.last_metrics || {}
             const live = h.online && h.status !== 'stopped'
+            const now = nowText(h)
             return (
               <tr key={h.id} className={`row-${h.status}`}>
-                <td><span className={`dot s-${h.status}`} aria-hidden="true" /><Link to={`/hosts/${h.id}`} className="nm">{h.name}</Link></td>
-                <td className="muted" data-label="Тип">{subtitle(h)}</td>
+                <td title={h.name}><span className={`dot s-${h.status}`} aria-hidden="true" /><Link to={`/hosts/${h.id}`} className="nm">{h.name}</Link></td>
+                <td className="muted" data-label="Тип" title={subtitle(h)}>{subtitle(h)}</td>
                 <td className="num" data-label="CPU">{live ? pct(m.cpu_usage_percent) : '—'}</td>
                 <td className="num" data-label="Память">{live ? pct(m.mem_used_percent) : '—'}</td>
                 <td className={m.disk_max_percent > 85 && live ? 'num hot' : 'num'} data-label="Диск" title={m.disk_max_mount || undefined}>{live && m.disk_max_mount ? pct(m.disk_max_percent) : '—'}</td>
                 <td data-label="30 дней"><AvailabilityBar av={h.availability} compact labels={false} /></td>
-                <td className={`num pct ${avTone(h.availability)}`} data-label="Доступность">{avText(h.availability)}</td>
-                <td className={`now-${h.status}`} data-label="Сейчас">{nowText(h)}{h.maintenance && <span className="maint-chip">обслуживание</span>}</td>
+                <td className={`num pct ${avTone(h.availability)}`} data-label="Доступность" title={avText(h.availability)}>{avText(h.availability)}</td>
+                <td className={`now-${h.status}`} data-label="Сейчас" title={now}>{now}{h.maintenance && <span className="maint-chip">обслуживание</span>}</td>
               </tr>
             )
           })}
@@ -400,6 +524,10 @@ export default function Overview() {
   const [showStopped, setShowStopped] = useState(() => { try { return localStorage.getItem('sentra.stopped') === '1' } catch { return false } })
   const [openGroups, setOpenGroups] = useState(readOpenGroups)
   const [sort, setSort] = useState(null)
+  const [cols, setCols] = useState(readCols)
+  const [closedT, setClosedT] = useState(() => { try { return JSON.parse(localStorage.getItem('sentra.tableClosed') || '{}') } catch { return {} } })
+  const saveClosed = (n) => { setClosedT(n); try { localStorage.setItem('sentra.tableClosed', JSON.stringify(n)) } catch { /* приватный режим */ } }
+  const toggleT = (k) => { const n = { ...closedT, [k]: !closedT[k] }; if (!n[k]) delete n[k]; saveClosed(n) }
   const pickStopped = (v) => { setShowStopped(v); try { localStorage.setItem('sentra.stopped', v ? '1' : '0') } catch { /* приватный режим */ } }
   const toggleGroup = (k) => setOpenGroups((o) => {
     const n = { ...o, [k]: !o[k] }
@@ -522,10 +650,19 @@ export default function Overview() {
       </div>
 
       {allGroups.length === 0 && <p className="muted">Таких устройств нет.</p>}
+      {viewMode === 'table' && allGroups.length > 1 && (
+        <div className="tbl-tools">
+          <button type="button" className="link-btn" onClick={() => saveClosed(Object.fromEntries(allGroups.map(({ g }) => [g.key, true])))}>Свернуть все</button>
+          <button type="button" className="link-btn" onClick={() => saveClosed({})}>Развернуть все</button>
+          {cols !== COLS_DEFAULT && <button type="button" className="link-btn" onClick={() => { setCols(COLS_DEFAULT); saveCols(COLS_DEFAULT) }}>Ширина столбцов по умолчанию</button>}
+          <span className="muted">Ширину столбца меняйте, потянув за границу в заголовке.</span>
+        </div>
+      )}
       <div className={viewMode === 'table' ? '' : 'groups'}>
       {allGroups.map(({ g, shown }) => (
         viewMode === 'table'
-          ? (shown.length > 0 && <section key={g.key} className="group"><HostTable g={{ ...g, items: shown }} sort={sort} setSort={setSort} /></section>)
+          ? (shown.length > 0 && <section key={g.key} className="group"><HostTable g={{ ...g, items: shown }} sort={sort} setSort={setSort}
+              closed={!!closedT[g.key]} onToggle={() => toggleT(g.key)} cols={cols} setCols={setCols} /></section>)
           : <GroupTiles key={g.key} g={g} shown={shown} open={openGroups[g.key]} toggle={() => toggleGroup(g.key)} />
       ))}
       </div>
