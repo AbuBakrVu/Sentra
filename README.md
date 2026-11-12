@@ -105,8 +105,10 @@ Proxmox не знает, насколько заполнен диск внутр
    # Proxmox 8: отдельного права на чтение нет; VM.Monitor открывает и монитор QEMU
    pveum role add SentraGuest -privs VM.Monitor
 
-   pveum aclmod /vms -user sentra@pve -role SentraGuest
+   pveum aclmod / -user sentra@pve -role SentraGuest
    ```
+
+Роль выдаётся на путь `/`, как и PVEAuditor: тогда права складываются. Если выдать её на `/vms`, она заменит PVEAuditor для машин, токен потеряет `VM.Audit`, и Sentra перестанет видеть машины.
 
 У машин без агента вместо диска Sentra пишет, чего не хватает: «нужен гостевой агент QEMU» или «у токена нет права на гостевой агент». Память у ВМ видна и без агента; точное значение изнутри Proxmox получает через драйвер Balloon (в Linux встроен, в Windows ставится из `virtio-win`).
 

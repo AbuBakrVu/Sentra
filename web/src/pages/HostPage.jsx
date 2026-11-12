@@ -214,7 +214,7 @@ function GuestBanner({ state }) {
         <p><b>У токена нет права читать гостевой агент</b>, поэтому диски внутри ВМ не видны. Право выдаётся один раз на всё подключение.</p>
         <ol>
           <li>В Proxmox: Datacenter › Permissions › Roles › Create. Название <code>SentraGuest</code>, право <code>VM.GuestAgent.Audit</code> (в Proxmox 8 — <code>VM.Monitor</code>).</li>
-          <li>Permissions › Add › User Permission: путь <code>/vms</code>, пользователь токена, роль <code>SentraGuest</code>, галочка Propagate.</li>
+          <li>Permissions › Add › User Permission: путь <code>/</code> (как у PVEAuditor, не <code>/vms</code>), пользователь токена, роль <code>SentraGuest</code>, галочка Propagate.</li>
         </ol>
         <p className="muted">Sentra проверит снова в течение получаса.</p>
       </div>

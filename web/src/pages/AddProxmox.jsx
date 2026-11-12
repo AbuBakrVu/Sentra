@@ -208,11 +208,12 @@ export default function AddProxmox() {
             <p>Proxmox не знает, насколько заполнен диск внутри ВМ: это знает только её система. Sentra спрашивает об этом гостевой агент QEMU. Для этого токену нужно ещё одно право, а в машине должен работать агент.</p>
             <ul>
               <li><b>Proxmox 9:</b> право <code>VM.GuestAgent.Audit</code>, только чтение сведений от агента.
-                <CopyBlock text={'pveum role add SentraGuest -privs VM.GuestAgent.Audit\npveum aclmod /vms -user sentra@pve -role SentraGuest'} /></li>
+                <CopyBlock text={'pveum role add SentraGuest -privs VM.GuestAgent.Audit\npveum aclmod / -user sentra@pve -role SentraGuest'} /></li>
               <li><b>Proxmox 8:</b> отдельного права на чтение нет, нужно <code>VM.Monitor</code>. Учтите, что оно открывает и монитор QEMU, то есть больше, чем просмотр.
-                <CopyBlock text={'pveum role add SentraGuest -privs VM.Monitor\npveum aclmod /vms -user sentra@pve -role SentraGuest'} /></li>
+                <CopyBlock text={'pveum role add SentraGuest -privs VM.Monitor\npveum aclmod / -user sentra@pve -role SentraGuest'} /></li>
               <li><b>В машине:</b> Linux — <code>apt install qemu-guest-agent</code>, Windows — VirtIO-драйверы с образа <code>virtio-win</code>. В Proxmox: машина › Options › QEMU Guest Agent › Enabled, затем выключить и включить машину.</li>
             </ul>
+            <p>Роль выдаётся на путь <code>/</code>, как PVEAuditor, тогда права складываются. На <code>/vms</code> она заменила бы PVEAuditor для машин, и Sentra перестала бы их видеть.</p>
             <p>Без этого Sentra покажет у ВМ процессор, память и сеть, а вместо диска — подсказку, чего не хватает. Версию Proxmox показывает команда <code>pveversion</code>.</p>
           </details>
           <details className="help">

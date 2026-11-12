@@ -18,6 +18,7 @@
 //	curl -k 'https://127.0.0.1:8006/mock?vm=105&disk=95'      диск / внутри ВМ 105 заполнен на 95% (через гостевой агент)
 //	curl -k 'https://127.0.0.1:8006/mock?vm=105&agent=0'      у ВМ 105 нет гостевого агента (agent=1 — есть)
 //	curl -k 'https://127.0.0.1:8006/mock?forbid=1'            у токена нет права на гостевой агент (forbid=0 — есть)
+//	curl -k 'https://127.0.0.1:8006/mock?novms=1'             токен не видит машины, как без VM.Audit (novms=0 — видит)
 //	curl -k 'https://127.0.0.1:8006/mock?reset=1'             убрать все сценарии
 package main
 
@@ -100,6 +101,7 @@ type cluster struct {
 	started time.Time
 	calls   map[string]int
 	forbid  bool // токену не выдано право на гостевой агент
+	novms   bool // у токена нет VM.Audit: Proxmox отдаёт узлы и хранилища, но не машины
 }
 
 var roles = []string{"web", "db", "app", "1c", "rdp", "file", "mail", "dc", "backup", "dev", "test", "vpn", "mon", "crm", "git", "proxy"}
@@ -177,7 +179,7 @@ func (c *cluster) resources() []map[string]any {
 	var out []map[string]any
 	load := map[string][2]float64{} // узел → занятые ядра, память
 	for _, v := range c.vms {
-		if v.gone {
+		if v.gone || c.novms {
 			continue
 		}
 		n := c.nodeByName(v.node)
@@ -267,7 +269,7 @@ func (c *cluster) control(w http.ResponseWriter, r *http.Request) {
 		for _, v := range c.vms {
 			v.pinCPU, v.pinMem, v.pinDisk, v.gone = -1, -1, -1, false
 		}
-		c.forbid = false
+		c.forbid, c.novms = false, false
 		for _, n := range c.nodes {
 			n.offline = false
 		}
@@ -317,6 +319,10 @@ func (c *cluster) control(w http.ResponseWriter, r *http.Request) {
 			v.gone = q.Get("gone") != "0"
 			msg = append(msg, fmt.Sprintf("%s: пропала из кластера = %v", v.name, v.gone))
 		}
+	}
+	if f := q.Get("novms"); f != "" {
+		c.novms = f != "0"
+		msg = append(msg, fmt.Sprintf("токен не видит машины (нет VM.Audit) = %v", c.novms))
 	}
 	if f := q.Get("forbid"); f != "" {
 		c.forbid = f != "0"
