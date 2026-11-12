@@ -44,7 +44,7 @@ code { font-family: ui-monospace, 'SF Mono', Consolas, monospace; font-size: 0.9
 
 /* ---------- каркас: верхнее меню ---------- */
 .shell { min-height: 100vh; }
-.topnav { position: sticky; top: 0; z-index: 30; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 20px; height: 72px; padding: 0 28px; background: rgba(239, 239, 236, 0.88); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line-soft); }
+.topnav { position: sticky; top: 0; z-index: 30; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 20px; height: 72px; padding: 0 28px; background: rgba(239, 239, 236, 0.88); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line-soft); }
 .topnav .brand { justify-self: start; color: var(--ink); font-size: 19px; gap: 9px; }
 .topnav .brand svg { color: var(--night); }
 .pillnav { justify-self: center; display: flex; align-items: center; gap: 4px; padding: 5px; background: var(--surface); border: 1px solid var(--line-soft); border-radius: 999px; box-shadow: 0 1px 2px rgba(30, 34, 28, 0.04); }
@@ -53,8 +53,20 @@ code { font-family: ui-monospace, 'SF Mono', Consolas, monospace; font-size: 0.9
 .pn.active { background: linear-gradient(150deg, #2C6646, #1C3E2B); color: #fff; padding: 0 16px 0 13px; font-weight: 500; box-shadow: 0 4px 10px rgba(28, 62, 43, 0.25); }
 .pn-count { min-width: 17px; height: 17px; padding: 0 4px; border-radius: 999px; background: var(--crit); color: #fff; font-size: 10.5px; font-style: normal; font-weight: 600; line-height: 17px; text-align: center; }
 .pn.active .pn-count { background: #fff; color: var(--night-2); }
-.tn-right { justify-self: end; display: flex; align-items: center; gap: 10px; min-width: 0; }
-.tn-right .search { flex: 0 1 260px; width: 260px; height: 40px; border-radius: 999px; }
+/* Боковые колонки шапки равны, поэтому меню стоит ровно по центру страницы.
+   Правая колонка подстраивается под оставшееся место: сначала сужается поиск,
+   а если места совсем мало, он сворачивается в кнопку-лупу. */
+.tn-right { justify-self: stretch; position: relative; display: flex; justify-content: flex-end; align-items: center; gap: 10px; min-width: 0; container-type: inline-size; }
+.tn-right .search { flex: 0 1 260px; min-width: 0; height: 40px; border-radius: 999px; }
+@container (max-width: 440px) {
+  .tn-right .search kbd { display: none; }
+}
+@container (max-width: 300px) {
+  .tn-right .search { flex: none; width: 40px; padding: 0; justify-content: center; cursor: pointer; }
+  .tn-right .search input { position: absolute; width: 1px; opacity: 0; }
+  .tn-right .search:focus-within { position: absolute; z-index: 25; right: 0; width: min(300px, 100cqw); padding: 0 12px 0 14px; justify-content: flex-start; }
+  .tn-right .search:focus-within input { position: static; width: auto; opacity: 1; }
+}
 .icon-btn { position: relative; width: 40px; height: 40px; flex: none; border-radius: 50%; border: 1px solid var(--line); background: var(--surface); color: #45483F; display: grid; place-items: center; cursor: pointer; text-decoration: none; padding: 0; }
 .icon-btn:hover { border-color: #C9C9C3; color: var(--ink); }
 .me { position: relative; }
@@ -112,11 +124,10 @@ code { font-family: ui-monospace, 'SF Mono', Consolas, monospace; font-size: 0.9
 .dev-head .toolbar { margin: 0; }
 
 @media (max-width: 760px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 1240px) { .tn-right .search { width: 180px; } .search kbd { display: none; } }
 @media (max-width: 1060px) {
   .topnav { grid-template-columns: auto 1fr; grid-template-areas: "brand right" "nav nav"; height: auto; padding: 10px 16px; gap: 10px; }
   .topnav .brand { grid-area: brand; }
-  .tn-right { grid-area: right; }
+  .tn-right { grid-area: right; container-type: normal; }
   .pillnav { grid-area: nav; justify-self: start; max-width: 100%; overflow-x: auto; }
   .tn-right .search { width: auto; flex: 1 1 160px; }
   .search kbd { display: none; }

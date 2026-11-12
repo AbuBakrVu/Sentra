@@ -201,10 +201,10 @@ function HostSearch() {
   const mac = /Mac|iPhone|iPad/.test(navigator.platform)
 
   return (
-    <div className="search">
+    <div className="search" onClick={() => ref.current?.focus()}>
       <Icon name="search" size={18} />
       <label className="sr-only" htmlFor="host-search">Поиск устройства</label>
-      <input id="host-search" ref={ref} value={q} placeholder="Поиск устройства…" autoComplete="off"
+      <input id="host-search" ref={ref} value={q} placeholder="Поиск…" autoComplete="off"
         onFocus={() => { load(); setOpen(true) }} onBlur={() => setTimeout(() => setOpen(false), 150)}
         onChange={(e) => { setQ(e.target.value); setSel(0); setOpen(true) }}
         onKeyDown={(e) => {
