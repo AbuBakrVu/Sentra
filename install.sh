@@ -6,7 +6,7 @@
 # Повторный запуск той же команды обновляет коробку до свежей версии из GitHub.
 # После установки доступна команда sentra:
 #   sudo sentra info      адрес панели, логин и пароль первого входа
-#   sudo sentra update    обновить до свежей версии
+#   sudo sentra update    обновить до свежей версии (с той же ветки, с которой ставили)
 #   sudo sentra status    состояние контейнеров
 #   sudo sentra logs      журнал сервера
 #
@@ -69,7 +69,7 @@ set -e
 DIR="$DIR"
 case "\${1:-}" in
   info)    exec bash "\$DIR/install.sh" --info ;;
-  update)  curl -fsSL "$RAW" | bash ;;
+  update)  curl -fsSL "$RAW" | SENTRA_BRANCH="$BRANCH" SENTRA_DIR="$DIR" bash ;;
   status)  cd "\$DIR" && exec docker compose ps ;;
   logs)    cd "\$DIR" && exec docker compose logs --tail 100 -f sentra ;;
   restart) cd "\$DIR" && exec docker compose restart ;;
@@ -100,7 +100,8 @@ main() {
 
   say "2/5 Загружаю код из GitHub"
   if [ -d "$DIR/.git" ]; then
-    git -C "$DIR" fetch -q --depth 1 origin "$BRANCH" </dev/null
+    git -C "$DIR" fetch -q --depth 1 origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH" </dev/null \
+      || fail "не удалось скачать ветку $BRANCH из GitHub"
     git -C "$DIR" reset -q --hard "origin/$BRANCH"
     echo "Обновлено до $(git -C "$DIR" log -1 --format='%h %s')"
   else
