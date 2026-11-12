@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"regexp"
 	"strings"
 	"sync"
@@ -68,10 +69,19 @@ func (s *Server) pollAllPVE(ctx context.Context) {
 	wg.Wait()
 }
 
+// Опрос дольше этого времени пишем в журнал: при интервале 30 секунд
+// он рискует не успеть до следующего.
+const pveSlowPoll = 10 * time.Second
+
 func (s *Server) pollPVE(ctx context.Context, src *PVESource) {
 	ctx, cancel := context.WithTimeout(ctx, 25*time.Second)
 	defer cancel()
-	if err := s.collectPVE(ctx, src); err != nil {
+	started := time.Now()
+	err := s.collectPVE(ctx, src)
+	if d := time.Since(started); d > pveSlowPoll || os.Getenv("SENTRA_DEBUG_PVE") != "" {
+		log.Printf("proxmox %s: опрос занял %.1f с", src.Name, d.Seconds())
+	}
+	if err != nil {
 		if err.Error() != src.LastError {
 			log.Printf("proxmox %s (%s): %v", src.Name, src.URL, err)
 		}

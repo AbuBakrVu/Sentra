@@ -573,3 +573,13 @@ a.dm:hover, a.dm:focus-visible { outline: 2px solid var(--ink); outline-offset: 
 .gcard-calm { margin: 0 0 4px; padding-top: 10px; border-top: 1px solid var(--line-soft); font-size: 14px; color: var(--ok); }
 .gcard .group-more { margin-top: 8px; }
 .gcard.open .grid { margin-top: 4px; }
+
+.gcard-toggle { display: none; }
+@media (max-width: 640px) {
+  .gcard-toggle { display: grid; place-items: center; margin-left: auto; width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--line); background: var(--surface); color: var(--ink-2); cursor: pointer; padding: 0; transform: rotate(135deg); transition: transform 0.15s; }
+  .gcard:not(.folded) .gcard-toggle { transform: rotate(-45deg); }
+  .gcard-head { flex-wrap: wrap; }
+  .gcard-head .gh-counts { order: 3; flex-basis: 100%; }
+  .gcard.folded { padding-bottom: 14px; }
+  .gcard.folded > :not(.gcard-head) { display: none; }
+}

@@ -45,14 +45,19 @@ export function groups(list) {
     out.get(key).items.push(h)
   }
   const gs = [...out.values()]
-  gs.sort((a, b) => (a.key === 'agents' ? -1 : b.key === 'agents' ? 1 : a.title.localeCompare(b.title, 'ru')))
+  // несколько подключений Proxmox: узлы с одинаковыми именами различаем по кластеру
+  const many = new Set(gs.filter((g) => g.key !== 'agents').map((g) => g.src)).size > 1
+  if (many) for (const g of gs) if (g.key !== 'agents') g.title = `${g.src}: ${g.title.replace('Proxmox: ', '')}`
+  // по кластеру, внутри по номеру узла: pve2 раньше pve10
+  gs.sort((a, b) => (a.key === 'agents' ? -1 : b.key === 'agents' ? 1
+    : (a.src || '').localeCompare(b.src || '', 'ru') || a.title.localeCompare(b.title, 'ru', { numeric: true })))
   for (const g of gs) {
     if (g.key !== 'agents') g.items.sort((a, b) => (kindOrder[a.kind] ?? 2) - (kindOrder[b.kind] ?? 2))
     const vms = g.items.filter((h) => h.kind === 'pve-qemu' || h.kind === 'pve-lxc')
     const running = vms.filter((h) => h.status !== 'stopped' && h.status !== 'offline').length
     g.note = g.key === 'agents'
       ? `${g.items.length} ${plural(g.items.length, 'сервер', 'сервера', 'серверов')} с агентом`
-      : `${[g.src, `${vms.length} ${plural(vms.length, 'машина', 'машины', 'машин')}, запущено ${running}`].filter((x) => x && x !== g.title).join(', ')}`
+      : `${[!many && g.src, `${vms.length} ${plural(vms.length, 'машина', 'машины', 'машин')}, запущено ${running}`].filter((x) => x && x !== g.title).join(', ')}`
   }
   return gs
 }
@@ -294,10 +299,19 @@ function GroupTiles({ g, shown, open, toggle }) {
   const eye = shown.filter((h) => h.kind !== 'pve-node' && needsEye(h))
     .sort((a, b) => order[a.status] - order[b.status] || a.name.localeCompare(b.name, 'ru'))
   const tone = c.bad ? 'bad' : c.warn ? 'warn' : 'ok'
+  // на телефоне спокойный узел свёрнут в одну строку, узел с проблемами раскрыт
+  const [peek, setPeek] = useState(false)
+  const folded = tone === 'ok' && !peek && !open
   return (
-    <section className={`gcard t-${tone}${open ? ' open' : ''}`} aria-labelledby={`g-${g.key}`}>
+    <section className={`gcard t-${tone}${open ? ' open' : ''}${folded ? ' folded' : ''}`} aria-labelledby={`g-${g.key}`}>
       <div className="gcard-head">
         <h2 id={`g-${g.key}`}>{node ? <Link to={`/hosts/${node.id}`}>{g.title}</Link> : g.title}</h2>
+        {tone === 'ok' && !open && (
+          <button type="button" className="gcard-toggle" aria-expanded={!folded} onClick={() => setPeek((v) => !v)}>
+            <span className="sr-only">{folded ? 'Показать машины узла' : 'Свернуть'}</span>
+            <Icon name="arrow" size={16} />
+          </button>
+        )}
         <p className="gh-counts">
           {c.bad > 0 && <span className="gc bad">{c.bad} {plural(c.bad, 'авария', 'аварии', 'аварий')}</span>}
           {c.warn > 0 && <span className="gc warn">{c.warn} с предупр.</span>}
@@ -436,6 +450,8 @@ export default function Overview() {
   const days = fleetDays(hosts)
   const badDays = days.filter((d) => d === 'down').length
   const v = verdict(open)
+  // в больших группах проблемы и так видны в карточке узла
+  const hasCards = allGroups.some(({ g }) => g.items.length >= COMPACT_FROM)
   const showDevices = (f) => { setFilter(f); document.getElementById('devices')?.scrollIntoView({ behavior: 'smooth' }) }
 
   return (
@@ -470,7 +486,7 @@ export default function Overview() {
 
       {inet && <InetStrip h={inet} />}
 
-      {open.length > 0 && (
+      {open.length > 0 && !(viewMode === 'tiles' && hasCards) && (
         <section className="card attn" aria-labelledby="attn-h">
           <div className="card-head">
             <h2 id="attn-h">Требуют внимания</h2>
