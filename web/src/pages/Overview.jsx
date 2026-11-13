@@ -420,7 +420,9 @@ function GroupTiles({ g, shown, open, toggle }) {
   const node = g.items.find((h) => h.kind === 'pve-node')
   const nm = node?.last_metrics || {}
   const pct = (v) => (v == null ? '—' : `${Math.round(v)}%`)
-  const eye = shown.filter((h) => h.kind !== 'pve-node' && needsEye(h))
+  // узел недоступен: про его машины ничего не известно, перечислять их незачем
+  const nodeDown = node && !node.online && node.status !== 'waiting'
+  const eye = nodeDown ? [] : shown.filter((h) => h.kind !== 'pve-node' && needsEye(h))
     .sort((a, b) => order[a.status] - order[b.status] || a.name.localeCompare(b.name, 'ru'))
   const tone = c.bad ? 'bad' : c.warn ? 'warn' : 'ok'
   // на телефоне спокойный узел свёрнут в одну строку, узел с проблемами раскрыт
@@ -436,20 +438,25 @@ function GroupTiles({ g, shown, open, toggle }) {
             <Icon name="arrow" size={16} />
           </button>
         )}
-        <p className="gh-counts">
-          {c.bad > 0 && <span className="gc bad">{c.bad} {plural(c.bad, 'авария', 'аварии', 'аварий')}</span>}
-          {c.warn > 0 && <span className="gc warn">{c.warn} с предупр.</span>}
-          <span className="gc">{c.ok} в порядке</span>
-          {c.stopped > 0 && <span className="gc off">{c.stopped} выкл.</span>}
-        </p>
+        {nodeDown ? <p className="gh-counts"><span className="gc bad">узел недоступен</span></p> : (
+          <p className="gh-counts">
+            {c.bad > 0 && <span className="gc bad">{c.bad} {plural(c.bad, 'авария', 'аварии', 'аварий')}</span>}
+            {c.warn > 0 && <span className="gc warn">{c.warn} с предупр.</span>}
+            <span className="gc">{c.ok} в порядке</span>
+            {c.stopped > 0 && <span className="gc off">{c.stopped} выкл.</span>}
+          </p>
+        )}
       </div>
       <p className="gcard-sub">
         {g.note}
         {node && node.online && <> · узел: CPU <b>{pct(nm.cpu_usage_percent)}</b>, память <b>{pct(nm.mem_used_percent)}</b>{nm.disk_max_mount && <>, диск <b className={nm.disk_max_percent > 85 ? 'hot' : ''}>{pct(nm.disk_max_percent)}</b></>}</>}
-        {node && node.issues.length > 0 && <span className="gcard-node-bad"> · {node.issues[0]}</span>}
+        {node && !nodeDown && node.issues.length > 0 && <span className="gcard-node-bad"> · {node.issues[0]}</span>}
       </p>
       <DotMap items={g.items} />
-      {!open && (eye.length > 0 ? (
+      {!open && nodeDown && (
+        <p className="gcard-down">{node.issues[0] || 'Узел недоступен'}. Пока он не вернётся, о {g.items.length - 1} {plural(g.items.length - 1, 'машине', 'машинах', 'машинах')} на нём ничего не известно.</p>
+      )}
+      {!open && !nodeDown && (eye.length > 0 ? (
         <ul className="gcard-probs">
           {eye.slice(0, 4).map((h) => (
             <li key={h.id}>
