@@ -493,6 +493,14 @@ func (s *Store) PVEHostIDs(sourceID string) map[string]string {
 }
 
 // MarkPVEGone помечает машины, которых больше нет в Proxmox.
+// PVEMachinesOn — сколько машин подключения стоит на узле (без удалённых).
+func (s *Store) PVEMachinesOn(sourceID, node string) int {
+	var n int
+	s.db.QueryRow(`SELECT COUNT(*) FROM hosts WHERE source_id=? AND kind IN ('pve-qemu','pve-lxc')
+		AND json_extract(meta,'$.node')=? AND COALESCE(json_extract(meta,'$.gone'),0)=0`, sourceID, node).Scan(&n)
+	return n
+}
+
 func (s *Store) MarkPVEGone(id string) {
 	s.db.Exec(`UPDATE hosts SET meta=json_set(meta, '$.gone', 1) WHERE id=?`, id)
 }

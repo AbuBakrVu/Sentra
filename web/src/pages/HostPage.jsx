@@ -184,9 +184,7 @@ export default function HostPage({ id }) {
         </section>
       )}
 
-      {h.kind === 'pve-qemu' && !m.disk_max_mount && h.status !== 'stopped' && (
-        <p className="banner info">Заполнение диска внутри виртуальной машины Proxmox показывает только при установленном гостевом агенте QEMU. Сейчас видны процессор, память и сеть.</p>
-      )}
+      {h.kind === 'pve-qemu' && !m.disk_max_mount && h.status !== 'stopped' && <GuestBanner state={h.meta?.guest_agent} />}
 
       <div className="charts">
         {charts.map(([metric, title]) => <Chart key={metric} hostId={id} metric={metric} range={range} refreshKey={tick} title={title} marks={marksFor(metric, history)} />)}
@@ -201,5 +199,38 @@ export default function HostPage({ id }) {
         <p className="muted small danger">Машины Proxmox появляются и исчезают вместе с кластером. Отключить весь Proxmox можно на странице <Link to="/add/proxmox">«Подключить Proxmox»</Link>.</p>
       )}
     </>
+  )
+}
+
+// Почему не виден диск ВМ и что сделать. Proxmox сам не знает, что внутри
+// диска машины: спрашивает у гостевого агента QEMU.
+function GuestBanner({ state }) {
+  if (state === 'pending') {
+    return <p className="banner info">Спрашиваем у гостевого агента QEMU заполнение дисков. Ответ появится в течение нескольких минут.</p>
+  }
+  if (state === 'forbidden') {
+    return (
+      <div className="banner warning guest-help">
+        <p><b>У токена нет права читать гостевой агент</b>, поэтому диски внутри ВМ не видны. Право выдаётся один раз на всё подключение.</p>
+        <ol>
+          <li>В Proxmox: Datacenter › Permissions › Roles › Create. Название <code>SentraGuest</code>, право <code>VM.GuestAgent.Audit</code> (в Proxmox 8 — <code>VM.Monitor</code>).</li>
+          <li>Permissions › Add › User Permission: путь <code>/</code> (как у PVEAuditor, не <code>/vms</code>), пользователь токена, роль <code>SentraGuest</code>, галочка Propagate.</li>
+        </ol>
+        <p className="muted">Sentra проверит снова в течение получаса.</p>
+      </div>
+    )
+  }
+  if (state === 'error') {
+    return <p className="banner info">Гостевой агент не ответил вовремя. Sentra спросит снова через 10 минут.</p>
+  }
+  return (
+    <div className="banner info guest-help">
+      <p><b>Диск не виден: в машине нет гостевого агента QEMU.</b> Proxmox видит процессор, память и сеть машины, а заполнение диска знает только её система.</p>
+      <ol>
+        <li>Внутри машины: Linux — <code>apt install qemu-guest-agent</code>, Windows — VirtIO-драйверы с образа <code>virtio-win</code>.</li>
+        <li>В Proxmox: машина › Options › QEMU Guest Agent › Enabled, затем выключить и включить машину (перезагрузки изнутри мало).</li>
+      </ol>
+      <p className="muted">После этого диски появятся здесь в течение 10 минут.</p>
+    </div>
   )
 }

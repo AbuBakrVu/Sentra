@@ -11,6 +11,7 @@ const P = {
   search: <><circle cx="11" cy="11" r="6.5" /><path d="m16 16 4 4" /></>,
   arrow: <path d="M8 16 16 8M9.5 8H16v6.5" />,
   check: <><circle cx="12" cy="12" r="8.5" /><path d="m8.5 12.2 2.4 2.4 4.6-4.8" /></>,
+  chevron: <path d="m6 9 6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />,
   globe: <><circle cx="12" cy="12" r="8.5" /><path d="M3.5 12h17M12 3.5c2.4 2.3 3.6 5.1 3.6 8.5s-1.2 6.2-3.6 8.5c-2.4-2.3-3.6-5.1-3.6-8.5s1.2-6.2 3.6-8.5Z" strokeLinejoin="round" /></>,
   pulse: <path d="M3 12h4l2.5-6 4 12 2.5-6h5" strokeLinejoin="round" />,
 }

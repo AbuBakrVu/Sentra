@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from '../App.jsx'
 import Fresh from '../Fresh.jsx'
 import { plural, statusText } from '../format.js'
-import { openProblems, useHosts, verdict } from './Overview.jsx'
+import { DotMap, groups, openProblems, useHosts, verdict } from './Overview.jsx'
 import { inetStatusText, lossText, ms } from './Internet.jsx'
 import { duration } from './Problems.jsx'
 
@@ -27,6 +27,8 @@ export default function Wall() {
   const stopped = devices.length - live.length
   const open = openProblems(all)
   const v = verdict(open)
+  // много устройств: вместо плиток карта по группам, крупно только проблемы
+  const dense = live.length > 24
   const full = () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.())
 
   return (
@@ -51,7 +53,29 @@ export default function Wall() {
         </ul>
       )}
 
-      <div className="wall-grid">
+      {dense && (
+        <div className="wall-maps">
+          {inet && (
+            <div className={`wall-tile s-${inet.status}`}>
+              <b>Интернет</b>
+              <span className="wall-state">{inetStatusText[inet.status]}</span>
+              <small>{inet.last_metrics?.inet_up === 1 ? `потери ${lossText(inet.last_metrics.loss5)}, задержка ${ms(inet.last_metrics.rtt5)}` : inet.issues[0] || ''}</small>
+            </div>
+          )}
+          {groups(devices).map((g) => {
+            const bad = g.items.filter((h) => ['critical', 'offline', 'warning'].includes(h.status)).length
+            const on = g.items.filter((h) => h.status !== 'stopped').length
+            return (
+              <div key={g.key} className={`wall-map${bad ? ' has-bad' : ''}`}>
+                <div className="wall-map-head"><b>{g.title.replace('Proxmox: ', '')}</b><span>{bad ? `${bad} с проблемой · ` : ''}работает {on - bad} из {g.items.length}</span></div>
+                <DotMap items={g.items} big />
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {!dense && <div className="wall-grid">
         {inet && (
           <div className={`wall-tile s-${inet.status}`}>
             <b>Интернет</b>
@@ -69,7 +93,7 @@ export default function Wall() {
             </div>
           )
         })}
-      </div>
+      </div>}
 
       <footer className="wall-foot">
         <span>Sentra</span>

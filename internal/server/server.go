@@ -45,6 +45,7 @@ type Server struct {
 	pve        *pvePoller
 	eng        *Engine
 	inet       *inetPoller
+	guest      *guestPoller
 }
 
 const offlineAfter = 3 * time.Minute
@@ -73,7 +74,7 @@ func New(cfg Config, web fs.FS) (*Server, *tls.Certificate, error) {
 		os.WriteFile(pf, []byte(pw+"\n"), 0o600)
 		log.Printf("Создан администратор: логин admin, пароль %s (сохранён в %s). Смените его после входа.", pw, pf)
 	}
-	s := &Server{cfg: cfg, st: st, vm: NewVM(cfg.VMURL), pin: pin, web: web, loginFails: map[string][]time.Time{}, pve: newPVEPoller(), eng: NewEngine(st), inet: newInetPoller()}
+	s := &Server{cfg: cfg, st: st, vm: NewVM(cfg.VMURL), pin: pin, web: web, loginFails: map[string][]time.Time{}, pve: newPVEPoller(), eng: NewEngine(st), inet: newInetPoller(), guest: newGuestPoller()}
 	return s, &cert, nil
 }
 
@@ -113,7 +114,7 @@ func (s *Server) Handler() http.Handler {
 	})
 	m.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) { httpErr(w, 404, "не найдено") })
 	m.HandleFunc("/", s.static)
-	return secHeaders(m)
+	return secHeaders(withGzip(m))
 }
 
 func secHeaders(h http.Handler) http.Handler {
@@ -502,7 +503,11 @@ func view(h *Host, open []*Problem) hostView {
 			return v
 		case h.Meta["node_offline"] == true:
 			v.Status = "critical"
-			v.Issues = append(v.Issues, "Узел Proxmox не в сети")
+			if node, _ := h.Meta["node"].(string); node != "" {
+				v.Issues = append(v.Issues, "Не в сети узел "+node)
+			} else {
+				v.Issues = append(v.Issues, "Узел Proxmox не в сети")
+			}
 			return v
 		case h.Kind != "pve-node" && st != "running":
 			v.Status = "stopped"
@@ -541,7 +546,13 @@ func (s *Server) views(hs []*Host) ([]hostView, error) {
 	}
 	out := make([]hostView, 0, len(hs))
 	for _, h := range hs {
-		v := view(h, openBy[h.ID])
+		var open []*Problem
+		for _, p := range openBy[h.ID] {
+			if !dependent(p, h.Kind) {
+				open = append(open, p)
+			}
+		}
+		v := view(h, open)
 		if h.LastSeen != 0 {
 			av := availabilityFor(h.CreatedAt, byHost[h.ID], now)
 			v.Av = &av
@@ -666,7 +677,13 @@ func (s *Server) chart(w http.ResponseWriter, r *http.Request, _ *User) {
 		unit = ""
 		qs = []chartQuery{{proto.MLoad1, fixed("1 мин")}, {proto.MLoad5, fixed("5 мин")}, {proto.MLoad15, fixed("15 мин")}}
 	case "disk":
-		qs = []chartQuery{{proto.MFsUsedPct, func(l map[string]string) string { return l["mount"] }}}
+		qs = []chartQuery{{proto.MFsUsedPct, func(l map[string]string) string {
+			// «C:» в легенде превратился бы в «C::»
+			if m := l["mount"]; len(m) == 2 && m[1] == ':' {
+				return "диск " + m[:1]
+			}
+			return l["mount"]
+		}}}
 	case "net":
 		unit = "B/s"
 		qs = []chartQuery{

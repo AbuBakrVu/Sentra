@@ -22,6 +22,9 @@ type pvePoller struct {
 	mu   sync.Mutex
 	prev map[string]netPrev // host id → прошлые netin/netout
 	kick chan string        // id подключения, которое нужно опросить сейчас
+
+	wmu    sync.Mutex
+	warned map[string]bool // подключения, о которых уже предупредили в журнале
 }
 
 type netPrev struct {
@@ -68,10 +71,19 @@ func (s *Server) pollAllPVE(ctx context.Context) {
 	wg.Wait()
 }
 
+// Опрос дольше этого времени пишем в журнал: при интервале 30 секунд
+// он рискует не успеть до следующего.
+const pveSlowPoll = 10 * time.Second
+
 func (s *Server) pollPVE(ctx context.Context, src *PVESource) {
 	ctx, cancel := context.WithTimeout(ctx, 25*time.Second)
 	defer cancel()
-	if err := s.collectPVE(ctx, src); err != nil {
+	started := time.Now()
+	err := s.collectPVE(ctx, src)
+	if d := time.Since(started); d > pveSlowPoll || debugPVE() {
+		log.Printf("proxmox %s: опрос занял %.1f с", src.Name, d.Seconds())
+	}
+	if err != nil {
 		if err.Error() != src.LastError {
 			log.Printf("proxmox %s (%s): %v", src.Name, src.URL, err)
 		}
@@ -102,6 +114,7 @@ func (s *Server) collectPVE(ctx context.Context, src *PVESource) error {
 	}
 
 	seen := map[string]bool{}
+	var guests []guestJob // запущенные ВМ: спросить у гостевого агента про диски
 	sum := map[string]any{"nodes": 0, "qemu": 0, "lxc": 0, "running": 0}
 	inc := func(k string) { sum[k] = sum[k].(int) + 1 }
 
@@ -202,7 +215,13 @@ func (s *Server) collectPVE(ctx context.Context, src *PVESource) error {
 					add(proto.MMemUsedPct, round2(100*float64(r.Mem)/float64(r.MaxMem)))
 				}
 				// у QEMU заполнение диска видно только через гостевой агент: disk=0
-				if r.Disk > 0 && r.MaxDisk > 0 {
+				if kind == "pve-qemu" {
+					key := src.ID + "|" + r.ID
+					st, fs := s.guest.state(key, now)
+					meta["guest_agent"] = st
+					samples = append(samples, guestSamples(fs)...)
+					guests = append(guests, guestJob{hostID: key, node: r.Node, vmid: int(r.VMID)})
+				} else if r.Disk > 0 && r.MaxDisk > 0 {
 					add(proto.MFsUsedPct, round2(100*float64(r.Disk)/float64(r.MaxDisk)), "mount", "/")
 					add(proto.MFsFree, float64(r.MaxDisk-r.Disk), "mount", "/")
 					add(proto.MFsTotal, float64(r.MaxDisk), "mount", "/")
@@ -237,7 +256,20 @@ func (s *Server) collectPVE(ctx context.Context, src *PVESource) error {
 		}
 	}
 
-	for ext, id := range s.st.PVEHostIDs(src.ID) {
+	known := s.st.PVEHostIDs(src.ID)
+	if machines := sum["qemu"].(int) + sum["lxc"].(int); machines == 0 && hadMachines(known) {
+		// Узлы видны, а машин нет ни одной: почти наверняка у токена пропало право
+		// VM.Audit (например, роль на /vms заменила PVEAuditor), а не удалили всё сразу.
+		// Машины «удалёнными» не помечаем: они вернутся, когда права починят.
+		msg := "Proxmox отдал список без единой машины: у токена, видимо, нет права VM.Audit. Частая причина — отдельная роль, выданная на путь /vms: она заменяет PVEAuditor для машин. Выдайте эту роль на путь «/»."
+		if s.pve.warnOnce(src.ID) {
+			log.Printf("proxmox %s: %s", src.Name, msg)
+		}
+		s.st.PVEResult(src.ID, false, msg, sum)
+		return nil
+	}
+	s.pve.clearWarn(src.ID)
+	for ext, id := range known {
 		if !seen[ext] {
 			s.st.MarkPVEGone(id)
 			if h, err := s.st.Host(id); err == nil {
@@ -246,7 +278,37 @@ func (s *Server) collectPVE(ctx context.Context, src *PVESource) error {
 		}
 	}
 	s.st.PVEResult(src.ID, true, "", sum)
+	s.pollGuests(ctx, src, cl, guests)
 	return nil
+}
+
+func hadMachines(known map[string]string) bool {
+	for ext := range known {
+		if strings.HasPrefix(ext, "qemu/") || strings.HasPrefix(ext, "lxc/") {
+			return true
+		}
+	}
+	return false
+}
+
+// warnOnce возвращает true при первом предупреждении о подключении, пока его не сбросят.
+func (p *pvePoller) warnOnce(src string) bool {
+	p.wmu.Lock()
+	defer p.wmu.Unlock()
+	if p.warned == nil {
+		p.warned = map[string]bool{}
+	}
+	if p.warned[src] {
+		return false
+	}
+	p.warned[src] = true
+	return true
+}
+
+func (p *pvePoller) clearWarn(src string) {
+	p.wmu.Lock()
+	delete(p.warned, src)
+	p.wmu.Unlock()
 }
 
 // pveVersion: "pve-manager/8.2.4/faa83925" → "8.2.4"

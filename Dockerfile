@@ -26,12 +26,15 @@ RUN for a in amd64 arm64; do \
 RUN CGO_ENABLED=1 go build -mod=vendor -trimpath \
       -ldflags "-s -w -X main.version=$VERSION -extldflags '-static'" -tags 'sqlite_omit_load_extension' \
       -o /out/sentra-server ./cmd/sentra-server
+# поддельный Proxmox для проверки на большом парке (см. README)
+RUN CGO_ENABLED=0 go build -mod=vendor -trimpath -ldflags "-s -w" -o /out/sentra-pvemock ./cmd/sentra-pvemock
 
 # --- итоговый образ ---
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates tzdata && adduser -D -H -u 10001 sentra \
     && mkdir -p /var/lib/sentra && chown sentra /var/lib/sentra
 COPY --from=go /out/sentra-server /usr/local/bin/sentra-server
+COPY --from=go /out/sentra-pvemock /usr/local/bin/sentra-pvemock
 COPY --from=go /out/agents /opt/sentra/agents
 USER sentra
 ENV SENTRA_LISTEN=:8443 SENTRA_DATA=/var/lib/sentra SENTRA_AGENTS_DIR=/opt/sentra/agents SENTRA_VM_URL=http://victoriametrics:8428

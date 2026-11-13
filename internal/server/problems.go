@@ -255,11 +255,18 @@ func (e *Engine) Eval(h *Host, now time.Time) {
 		t := "Нет данных от агента"
 		if pve {
 			t = "Нет данных от Proxmox"
+			if n := e.machinesOn(h); h.Kind == "pve-node" && n > 0 {
+				t = fmt.Sprintf("Нет данных от Proxmox об узле и %d %s на нём", n, pluralRu(n, "машине", "машинах", "машинах"))
+			}
 		}
 		want["offline"] = desired{"down", 2, t, 0}
 		keep = true
 	case h.Kind == "pve-node" && status != "online":
-		want["node_offline"] = desired{"down", 2, "Узел не в сети кластера", 0}
+		t := "Узел не в сети кластера"
+		if n := e.machinesOn(h); n > 0 {
+			t = fmt.Sprintf("Узел не в сети кластера, с ним недоступны %d %s", n, pluralRu(n, "машина", "машины", "машин"))
+		}
+		want["node_offline"] = desired{"down", 2, t, 0}
 	case pve && h.Meta["node_offline"] == true:
 		want["node_offline"] = desired{"down", 2, "Узел Proxmox не в сети", 0}
 	case pve && h.Kind != "pve-node" && status != "running":
@@ -513,6 +520,35 @@ func humanDur(sec int64) string {
 
 // ---------- API ----------
 
+// Зависимые проблемы: машина недоступна, потому что недоступен её узел или
+// всё подключение к Proxmox. Причина одна, и она уже есть у узла, поэтому в
+// списках и счётчиках их не показываем — иначе один упавший узел даёт десятки
+// одинаковых проблем. В базе они остаются: по ним считается доступность
+// машины и видна её история на её странице.
+func dependent(p *Problem, kind string) bool {
+	return (kind == "pve-qemu" || kind == "pve-lxc") && p.Kind == "down" && (p.Key == "node_offline" || p.Key == "offline")
+}
+
+// machinesOn — сколько машин стоит на узле: недоступны вместе с ним.
+func (e *Engine) machinesOn(h *Host) int {
+	if h.Kind != "pve-node" {
+		return 0
+	}
+	node, _ := h.Meta["node"].(string)
+	return e.st.PVEMachinesOn(h.SourceID, node)
+}
+
+func pluralRu(n int, one, few, many string) string {
+	n10, n100 := n%10, n%100
+	switch {
+	case n10 == 1 && n100 != 11:
+		return one
+	case n10 >= 2 && n10 <= 4 && (n100 < 12 || n100 > 14):
+		return few
+	}
+	return many
+}
+
 func (s *Server) listProblems(w http.ResponseWriter, r *http.Request, _ *User) {
 	q := r.URL.Query()
 	days, _ := strconv.Atoi(q.Get("days"))
@@ -532,9 +568,11 @@ func (s *Server) listProblems(w http.ResponseWriter, r *http.Request, _ *User) {
 		return
 	}
 	names := map[string]string{}
+	kinds := map[string]string{}
 	if hs, err := s.st.Hosts(); err == nil {
 		for _, h := range hs {
 			names[h.ID] = h.Name
+			kinds[h.ID] = h.Kind
 		}
 	}
 	host := q.Get("host")
@@ -543,6 +581,9 @@ func (s *Server) listProblems(w http.ResponseWriter, r *http.Request, _ *User) {
 		p := list[i]
 		if p.Kind == "stopped" || (host != "" && p.HostID != host) {
 			continue
+		}
+		if host == "" && dependent(p, kinds[p.HostID]) {
+			continue // на странице самой машины такие проблемы видны
 		}
 		if q.Get("state") == "closed" && p.ClosedAt == nil {
 			continue
