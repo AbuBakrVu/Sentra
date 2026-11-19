@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from '../App.jsx'
 import Fresh from '../Fresh.jsx'
 import { plural, statusText } from '../format.js'
-import { DotMap, groups, openProblems, useHosts, verdict } from './Overview.jsx'
+import { DotMap, groupLabel, groups, openProblems, useHosts, verdict } from './Overview.jsx'
 import { inetStatusText, lossText, ms } from './Internet.jsx'
 import { duration } from './Problems.jsx'
 
@@ -67,7 +67,7 @@ export default function Wall() {
             const on = g.items.filter((h) => h.status !== 'stopped').length
             return (
               <div key={g.key} className={`wall-map${bad ? ' has-bad' : ''}`}>
-                <div className="wall-map-head"><b>{g.title.replace('Proxmox: ', '')}</b><span>{bad ? `${bad} с проблемой · ` : ''}работает {on - bad} из {g.items.length}</span></div>
+                <div className="wall-map-head"><b>{groupLabel(g.title)}</b><span>{bad ? `${bad} с проблемой · ` : ''}работает {on - bad} из {g.items.length}</span></div>
                 <DotMap items={g.items} big />
               </div>
             )

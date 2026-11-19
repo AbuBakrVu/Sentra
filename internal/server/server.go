@@ -43,6 +43,7 @@ type Server struct {
 	loginMu    sync.Mutex
 	loginFails map[string][]time.Time
 	pve        *pvePoller
+	vmw        *vmwPoller
 	eng        *Engine
 	inet       *inetPoller
 	guest      *guestPoller
@@ -74,7 +75,7 @@ func New(cfg Config, web fs.FS) (*Server, *tls.Certificate, error) {
 		os.WriteFile(pf, []byte(pw+"\n"), 0o600)
 		log.Printf("Создан администратор: логин admin, пароль %s (сохранён в %s). Смените его после входа.", pw, pf)
 	}
-	s := &Server{cfg: cfg, st: st, vm: NewVM(cfg.VMURL), pin: pin, web: web, loginFails: map[string][]time.Time{}, pve: newPVEPoller(), eng: NewEngine(st), inet: newInetPoller(), guest: newGuestPoller()}
+	s := &Server{cfg: cfg, st: st, vm: NewVM(cfg.VMURL), pin: pin, web: web, loginFails: map[string][]time.Time{}, pve: newPVEPoller(), vmw: newVMWPoller(), eng: NewEngine(st), inet: newInetPoller(), guest: newGuestPoller()}
 	return s, &cert, nil
 }
 
@@ -105,6 +106,10 @@ func (s *Server) Handler() http.Handler {
 	m.HandleFunc("POST /api/pve", s.auth(s.addPVE))
 	m.HandleFunc("DELETE /api/pve/{id}", s.auth(s.deletePVE))
 	m.HandleFunc("POST /api/pve/{id}/trust", s.auth(s.trustPVE))
+	m.HandleFunc("GET /api/vmware", s.auth(s.listVMW))
+	m.HandleFunc("POST /api/vmware", s.auth(s.addVMW))
+	m.HandleFunc("DELETE /api/vmware/{id}", s.auth(s.deleteVMW))
+	m.HandleFunc("POST /api/vmware/{id}/trust", s.auth(s.trustVMW))
 	m.HandleFunc("GET /api/inet", s.auth(s.getInet))
 	m.HandleFunc("PUT /api/inet", s.auth(s.putInet))
 	m.HandleFunc("GET /api/inet/outages", s.auth(s.inetOutages))
@@ -477,17 +482,21 @@ func view(h *Host, open []*Problem) hostView {
 		v.Status = "waiting"
 		return v
 	}
-	pve := strings.HasPrefix(h.Kind, "pve-")
+	pve := isVirt(h.Kind)
 	if gone, _ := h.Meta["gone"].(float64); pve && gone == 1 {
 		v.Online = false
 		v.Status = "offline"
-		v.Issues = append(v.Issues, "Нет в Proxmox: машину удалили или перенесли в другой кластер")
+		if h.Kind == kindVMWVM || h.Kind == kindVMWHost {
+			v.Issues = append(v.Issues, "Нет в VMware: объект удалили или перенесли в другой vCenter")
+		} else {
+			v.Issues = append(v.Issues, "Нет в Proxmox: машину удалили или перенесли в другой кластер")
+		}
 		return v
 	}
 	if !v.Online {
 		v.Status = "offline"
 		if pve {
-			v.Issues = append(v.Issues, "Нет данных от Proxmox")
+			v.Issues = append(v.Issues, "Нет данных от "+virtName(h.Kind))
 		} else {
 			v.Issues = append(v.Issues, "Нет данных от агента")
 		}
@@ -496,20 +505,24 @@ func view(h *Host, open []*Problem) hostView {
 	if pve {
 		st, _ := h.Meta["status"].(string)
 		switch {
-		case h.Kind == "pve-node" && st != "online":
+		case isVirtNode(h.Kind) && st != "online":
 			v.Online = false
 			v.Status = "critical"
-			v.Issues = append(v.Issues, "Узел не в сети кластера")
+			v.Issues = append(v.Issues, nodeDownTitle(h.Kind))
 			return v
 		case h.Meta["node_offline"] == true:
 			v.Status = "critical"
 			if node, _ := h.Meta["node"].(string); node != "" {
-				v.Issues = append(v.Issues, "Не в сети узел "+node)
+				if h.Kind == kindVMWVM {
+					v.Issues = append(v.Issues, "Не на связи хост "+node)
+				} else {
+					v.Issues = append(v.Issues, "Не в сети узел "+node)
+				}
 			} else {
-				v.Issues = append(v.Issues, "Узел Proxmox не в сети")
+				v.Issues = append(v.Issues, guestNodeDownTitle(h.Kind))
 			}
 			return v
-		case h.Kind != "pve-node" && st != "running":
+		case !isVirtNode(h.Kind) && st != "running":
 			v.Status = "stopped"
 			return v
 		}
@@ -613,7 +626,11 @@ func (s *Server) deleteHost(w http.ResponseWriter, r *http.Request, _ *User) {
 		httpErr(w, 400, "проверка интернета отключается на странице «Интернет»")
 		return
 	}
-	if h, err := s.st.Host(r.PathValue("id")); err == nil && strings.HasPrefix(h.Kind, "pve-") {
+	if h, err := s.st.Host(r.PathValue("id")); err == nil && isVirt(h.Kind) {
+		if gone, _ := h.Meta["gone"].(float64); gone != 1 && strings.HasPrefix(h.Kind, "vmw-") {
+			httpErr(w, 400, "объект есть в VMware и вернётся при следующем опросе. Удалите его в vSphere или отключите всё подключение VMware в разделе «Добавить»")
+			return
+		}
 		if gone, _ := h.Meta["gone"].(float64); gone != 1 {
 			httpErr(w, 400, "машина есть в Proxmox и вернётся при следующем опросе. Удалите её в Proxmox или отключите весь Proxmox в разделе «Добавить»")
 			return
