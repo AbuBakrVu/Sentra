@@ -110,7 +110,7 @@ export default function HostPage({ id }) {
     'pve-qemu': [['cpu', 'Процессор'], ['mem', 'Память'], ['net', 'Сеть'], ...(m.disk_max_mount ? [['disk', 'Диск']] : [])],
     'pve-lxc': [['cpu', 'Процессор'], ['mem', 'Память'], ['disk', 'Диск'], ['net', 'Сеть']],
     'vmw-host': [['cpu', 'Процессор'], ['mem', 'Память'], ['disk', 'Заполнение хранилищ']],
-    'vmw-vm': [['cpu', 'Процессор'], ['mem', 'Активная память'], ...(m.disk_max_mount ? [['disk', 'Диски']] : [])],
+    'vmw-vm': [['cpu', 'Процессор'], ['mem', 'Активная память'], ...(m.disk_max_mount ? [['disk', 'Заполнение дисков']] : [])],
   }[h.kind] || [['cpu', 'Процессор'], ['mem', 'Память'], ['disk', 'Заполнение дисков'], ['net', 'Сеть'], ['load', 'Средняя нагрузка (load average)']]
 
   return (
@@ -202,6 +202,8 @@ export default function HostPage({ id }) {
         </section>
       )}
 
+      {!isNode(h) && m.fs && Object.keys(m.fs).length > 0 && h.status !== 'stopped' && <DisksTable fs={m.fs} />}
+
       {h.kind === 'pve-qemu' && !m.disk_max_mount && h.status !== 'stopped' && <GuestBanner state={h.meta?.guest_agent} />}
       {h.kind === 'vmw-vm' && !m.disk_max_mount && h.status === 'ok' && <ToolsBanner state={h.meta?.tools} />}
       {h.kind === 'vmw-host' && meta.storages?.some((st) => st.shared) && (
@@ -273,5 +275,35 @@ function ToolsBanner({ state }) {
       </ol>
       <p className="muted">Права пользователю Sentra добавлять не нужно. Диски появятся здесь в течение минуты.</p>
     </div>
+  )
+}
+
+// Все разделы машины: на обзоре виден только самый заполненный, здесь — каждый.
+// m.fs: раздел → [% занято, свободно байт, всего байт].
+function DisksTable({ fs }) {
+  const rows = Object.entries(fs)
+    .map(([mount, [p, free, total]]) => ({ mount, p, free, total, used: Math.max(0, total - free) }))
+    .sort((a, b) => a.mount.localeCompare(b.mount, 'ru', { numeric: true }))
+  const label = (mnt) => (mnt.length === 2 && mnt[1] === ':' ? `Диск ${mnt}` : mnt)
+  return (
+    <section className="storages" aria-labelledby="disks-h">
+      <h2 id="disks-h">Диски <span className="muted small">{rows.length}</span></h2>
+      <div className="tbl-box">
+        <table>
+          <thead><tr><th>Раздел</th><th className="num">Занято</th><th className="num">Свободно</th><th className="num">Всего</th><th>Заполнение</th></tr></thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.mount}>
+                <td><b>{label(r.mount)}</b></td>
+                <td className="num" data-label="Занято">{bytes(r.used)}</td>
+                <td className="num" data-label="Свободно">{bytes(r.free)}</td>
+                <td className="num" data-label="Всего">{bytes(r.total)}</td>
+                <td data-label="Заполнение"><span className="meter-track inline"><span className={`meter-fill ${r.p > 95 ? 'critical' : r.p > 85 ? 'warning' : 'ok'}`} style={{ width: `${Math.min(100, r.p)}%` }} /></span> {pct(r.p)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   )
 }

@@ -16,6 +16,7 @@ import (
 	"github.com/vmware/govmomi/simulator"
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/soap"
+	"github.com/vmware/govmomi/vim25/types"
 
 	"sentra/internal/vmware"
 )
@@ -225,4 +226,61 @@ func TestCollectVMware(t *testing.T) {
 	if len(hs) != 0 {
 		t.Errorf("после удаления подключения осталось %d устройств", len(hs))
 	}
+}
+
+// Машина с тремя дисками: на обзоре самый заполненный, в карточке все три.
+func TestVMwareGuestDisks(t *testing.T) {
+	m := simulator.ESX()
+	defer m.Remove()
+	if err := m.Create(); err != nil {
+		t.Fatal(err)
+	}
+	var target string
+	for _, obj := range m.Map().All("VirtualMachine") {
+		vm := obj.(*simulator.VirtualMachine)
+		target = vm.Name
+		vm.Guest.ToolsRunningStatus = "guestToolsRunning"
+		vm.Guest.ToolsVersionStatus2 = "guestToolsCurrent"
+		vm.Summary.Guest.ToolsRunningStatus = "guestToolsRunning"
+		vm.Summary.Guest.ToolsVersionStatus2 = "guestToolsCurrent"
+		gb := int64(1 << 30)
+		vm.Guest.Disk = []types.GuestDiskInfo{
+			{DiskPath: `C:\`, Capacity: 100 * gb, FreeSpace: 40 * gb},
+			{DiskPath: `D:\`, Capacity: 500 * gb, FreeSpace: 25 * gb},
+			{DiskPath: `E:\`, Capacity: 200 * gb, FreeSpace: 150 * gb},
+		}
+		break
+	}
+	m.Service.TLS = new(tls.Config)
+	sim := m.Service.NewServer()
+	defer sim.Close()
+
+	vmSrv := httptest.NewServer(&fakeVM{})
+	defer vmSrv.Close()
+	st := testStore(t)
+	s := &Server{st: st, vm: NewVM(vmSrv.URL), vmw: newVMWPoller(), eng: NewEngine(st)}
+	ctx := context.Background()
+	base := "https://" + sim.URL.Host
+	pass, _ := sim.URL.User.Password()
+	fp, _ := vmware.FetchFingerprint(ctx, base)
+	id, _ := st.AddVMW("ESXi", base, sim.URL.User.Username(), pass, fp, "HostAgent")
+	src, _ := st.VMWSource(id)
+	if err := s.collectVMW(ctx, src); err != nil {
+		t.Fatal(err)
+	}
+	hs, _ := st.Hosts()
+	for _, h := range hs {
+		if h.Name != target {
+			continue
+		}
+		fs, _ := h.LastMetrics["fs"].(map[string]any)
+		if len(fs) != 3 || fs["C:"] == nil || fs["D:"] == nil || fs["E:"] == nil {
+			t.Fatalf("разделы: %v", fs)
+		}
+		if h.LastMetrics["disk_max_mount"] != "D:" || h.LastMetrics["disk_max_percent"] != float64(95) {
+			t.Errorf("самый заполненный: %v %v", h.LastMetrics["disk_max_mount"], h.LastMetrics["disk_max_percent"])
+		}
+		return
+	}
+	t.Fatalf("машина %s не найдена", target)
 }
