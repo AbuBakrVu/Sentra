@@ -243,33 +243,37 @@ func (e *Engine) Eval(h *Host, now time.Time) {
 	want := map[string]desired{}
 	keep := false // не трогать прочие открытые проблемы (данных нет)
 
-	pve := strings.HasPrefix(h.Kind, "pve-")
+	pve := isVirt(h.Kind)
 	status, _ := h.Meta["status"].(string)
 	gone, _ := h.Meta["gone"].(float64)
 	switch {
 	case h.Kind == "inet":
 		keep = e.evalInet(h, now, open, want)
 	case pve && gone == 1:
-		// машины больше нет в Proxmox: всё закрываем
+		// машины больше нет в Proxmox или VMware: всё закрываем
 	case now.Sub(time.Unix(h.LastSeen, 0)) > offlineAfter:
 		t := "Нет данных от агента"
 		if pve {
-			t = "Нет данных от Proxmox"
-			if n := e.machinesOn(h); h.Kind == "pve-node" && n > 0 {
-				t = fmt.Sprintf("Нет данных от Proxmox об узле и %d %s на нём", n, pluralRu(n, "машине", "машинах", "машинах"))
+			t = "Нет данных от " + virtName(h.Kind)
+			if n := e.machinesOn(h); isVirtNode(h.Kind) && n > 0 {
+				what := "узле"
+				if h.Kind == kindVMWHost {
+					what = "хосте"
+				}
+				t = fmt.Sprintf("Нет данных от %s об %s и %d %s на нём", virtName(h.Kind), what, n, pluralRu(n, "машине", "машинах", "машинах"))
 			}
 		}
 		want["offline"] = desired{"down", 2, t, 0}
 		keep = true
-	case h.Kind == "pve-node" && status != "online":
-		t := "Узел не в сети кластера"
+	case isVirtNode(h.Kind) && status != "online":
+		t := nodeDownTitle(h.Kind)
 		if n := e.machinesOn(h); n > 0 {
-			t = fmt.Sprintf("Узел не в сети кластера, с ним недоступны %d %s", n, pluralRu(n, "машина", "машины", "машин"))
+			t = fmt.Sprintf("%s, с ним недоступны %d %s", t, n, pluralRu(n, "машина", "машины", "машин"))
 		}
 		want["node_offline"] = desired{"down", 2, t, 0}
 	case pve && h.Meta["node_offline"] == true:
-		want["node_offline"] = desired{"down", 2, "Узел Proxmox не в сети", 0}
-	case pve && h.Kind != "pve-node" && status != "running":
+		want["node_offline"] = desired{"down", 2, guestNodeDownTitle(h.Kind), 0}
+	case pve && !isVirtNode(h.Kind) && status != "running":
 		want["stopped"] = desired{"stopped", 0, "Выключена", 0}
 	default:
 		m := h.LastMetrics
@@ -526,12 +530,12 @@ func humanDur(sec int64) string {
 // одинаковых проблем. В базе они остаются: по ним считается доступность
 // машины и видна её история на её странице.
 func dependent(p *Problem, kind string) bool {
-	return (kind == "pve-qemu" || kind == "pve-lxc") && p.Kind == "down" && (p.Key == "node_offline" || p.Key == "offline")
+	return isVirtGuest(kind) && p.Kind == "down" && (p.Key == "node_offline" || p.Key == "offline")
 }
 
 // machinesOn — сколько машин стоит на узле: недоступны вместе с ним.
 func (e *Engine) machinesOn(h *Host) int {
-	if h.Kind != "pve-node" {
+	if !isVirtNode(h.Kind) {
 		return 0
 	}
 	node, _ := h.Meta["node"].(string)

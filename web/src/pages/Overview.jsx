@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../api.js'
 import { Link } from '../App.jsx'
-import { ago, plural, statusText, guestHint } from '../format.js'
+import { ago, plural, statusText, guestHint, toolsHint } from '../format.js'
 import Icon from '../Icons.jsx'
 import AvailabilityBar, { avText, avTone, hadProblems, pctText, pctTone } from '../Availability.jsx'
 import Fresh from '../Fresh.jsx'
@@ -9,9 +9,16 @@ import { inetStatusText, lossText, ms } from './Internet.jsx'
 
 const order = { critical: 0, offline: 1, warning: 2, waiting: 3, ok: 4, stopped: 5 }
 const sevText = { 1: 'Внимание', 2: 'Авария' }
-const kindOrder = { 'pve-node': 0, 'pve-qemu': 1, 'pve-lxc': 1 }
+const kindOrder = { 'pve-node': 0, 'pve-qemu': 1, 'pve-lxc': 1, 'vmw-host': 0, 'vmw-vm': 1 }
 
-export const isPVE = (h) => h.kind?.startsWith('pve-')
+// Устройство из API виртуализации: Proxmox или VMware. Узел (хост) и машины на нём.
+export const isPVE = (h) => h.kind?.startsWith('pve-') || h.kind?.startsWith('vmw-')
+export const isVMW = (h) => h.kind?.startsWith('vmw-')
+export const isNode = (h) => h.kind === 'pve-node' || h.kind === 'vmw-host'
+export const isGuest = (h) => h.kind === 'pve-qemu' || h.kind === 'pve-lxc' || h.kind === 'vmw-vm'
+export const virtName = (h) => (isVMW(h) ? 'VMware' : 'Proxmox')
+const groupPrefix = /^(Proxmox|VMware): /
+export const groupLabel = (title) => title.replace(groupPrefix, '')
 
 // Подпись под именем: что это за устройство и где оно.
 export function subtitle(h) {
@@ -19,6 +26,8 @@ export function subtitle(h) {
   if (h.kind === 'pve-node') return ['Узел Proxmox', m.pve_version && `PVE ${m.pve_version}`].filter(Boolean).join(', ')
   if (h.kind === 'pve-qemu') return `ВМ ${m.vmid}, ${m.maxcpu} vCPU, ${bytesShort(m.maxmem)}`
   if (h.kind === 'pve-lxc') return `Контейнер ${m.vmid}, ${m.maxcpu} vCPU, ${bytesShort(m.maxmem)}`
+  if (h.kind === 'vmw-host') return ['Хост ESXi', m.esx_version, m.cluster && `кластер ${m.cluster}`].filter(Boolean).join(', ')
+  if (h.kind === 'vmw-vm') return [`ВМ, ${m.maxcpu} vCPU, ${bytesShort(m.maxmem)}`, m.ip].filter(Boolean).join(', ')
   return [h.inventory?.os_name, h.inventory?.ips?.[0]].filter(Boolean).join(', ')
 }
 
@@ -28,14 +37,14 @@ function bytesShort(b) {
   return g >= 1 ? `${Math.round(g * 10) / 10} ГБ`.replace('.', ',') : `${Math.round(b / 1024 ** 2)} МБ`
 }
 
-// Группы на обзоре: серверы с агентом, затем каждый узел Proxmox со своими машинами.
+// Группы на обзоре: серверы с агентом, затем каждый узел Proxmox и хост ESXi со своими машинами.
 export function groups(list) {
   const out = new Map()
   for (const h of list) {
     let key, title, src
     if (isPVE(h)) {
-      key = `pve:${h.source_id}:${h.meta?.node}`
-      title = `Proxmox: ${h.meta?.node}`
+      key = `${isVMW(h) ? 'vmw' : 'pve'}:${h.source_id}:${h.meta?.node}`
+      title = `${virtName(h)}: ${h.meta?.node || 'хост неизвестен'}`
       src = h.meta?.source_name
     } else {
       key = 'agents'
@@ -45,15 +54,15 @@ export function groups(list) {
     out.get(key).items.push(h)
   }
   const gs = [...out.values()]
-  // несколько подключений Proxmox: узлы с одинаковыми именами различаем по кластеру
+  // несколько подключений Proxmox или VMware: узлы с одинаковыми именами различаем по кластеру
   const many = new Set(gs.filter((g) => g.key !== 'agents').map((g) => g.src)).size > 1
-  if (many) for (const g of gs) if (g.key !== 'agents') g.title = `${g.src}: ${g.title.replace('Proxmox: ', '')}`
+  if (many) for (const g of gs) if (g.key !== 'agents') g.title = `${g.src}: ${groupLabel(g.title)}`
   // по кластеру, внутри по номеру узла: pve2 раньше pve10
   gs.sort((a, b) => (a.key === 'agents' ? -1 : b.key === 'agents' ? 1
     : (a.src || '').localeCompare(b.src || '', 'ru') || a.title.localeCompare(b.title, 'ru', { numeric: true })))
   for (const g of gs) {
     if (g.key !== 'agents') g.items.sort((a, b) => (kindOrder[a.kind] ?? 2) - (kindOrder[b.kind] ?? 2))
-    const vms = g.items.filter((h) => h.kind === 'pve-qemu' || h.kind === 'pve-lxc')
+    const vms = g.items.filter(isGuest)
     const running = vms.filter((h) => h.status !== 'stopped' && h.status !== 'offline').length
     g.note = g.key === 'agents'
       ? `${g.items.length} ${plural(g.items.length, 'сервер', 'сервера', 'серверов')} с агентом`
@@ -144,7 +153,7 @@ function Tile({ h }) {
       </div>
       <div className="tile-sub">{subtitle(h)}</div>
       {h.status === 'stopped' ? (
-        <p className="tile-note">Выключена в Proxmox</p>
+        <p className="tile-note">{h.meta?.status === 'suspended' ? 'Приостановлена' : 'Выключена'} в {virtName(h)}</p>
       ) : h.status === 'waiting' || !h.online ? (
         <p className="tile-note">{h.status === 'waiting' ? 'Агент зарегистрирован, ждём первые метрики' : `Последние данные ${ago(h.last_seen)}`}</p>
       ) : (
@@ -153,6 +162,10 @@ function Tile({ h }) {
           <Meter label="Память" value={m.mem_used_percent} />
           {h.kind === 'pve-qemu' && !m.disk_max_mount
             ? <div className="meter"><span className="meter-label">Диск</span><span className="meter-hint">{guestHint[h.meta?.guest_agent] || guestHint.noagent}</span></div>
+            : h.kind === 'vmw-vm' && !m.disk_max_mount
+            ? <div className="meter"><span className="meter-label">Диск</span><span className="meter-hint">{toolsHint[h.meta?.tools] || toolsHint.notrunning}</span></div>
+            : h.kind === 'vmw-host' && !m.disk_max_mount
+            ? <Meter label="Диск" value={null} title="Общие хранилища кластера Sentra показывает у одного хоста" />
             : <Meter label="Диск" value={m.disk_max_percent} title={m.disk_max_mount ? `Самый заполненный раздел: ${m.disk_max_mount}` : undefined} />}
         </div>
       )}
@@ -168,7 +181,7 @@ function nowText(h) {
   if (h.status === 'stopped') return 'Выключена'
   if (h.status === 'waiting') return 'Ждём первые данные'
   if (h.issues.length) return h.issues[0]
-  if (h.kind === 'pve-node' && m.disk_max_mount) return `В порядке, больше всего занято ${m.disk_max_mount}`
+  if (isNode(h) && m.disk_max_mount) return `В порядке, больше всего занято ${m.disk_max_mount}`
   return 'В порядке'
 }
 
@@ -385,8 +398,8 @@ export function DotMap({ items, big = false }) {
       {list.map((h) => {
         const label = `${h.name}: ${h.issues[0] ? h.issues[0].toLowerCase() : dotText[h.status]}`
         return big
-          ? <span key={h.id} className={`dm s-${h.status}${h.kind === 'pve-node' ? ' node' : ''}`} title={label} />
-          : <Link key={h.id} to={`/hosts/${h.id}`} className={`dm s-${h.status}${h.kind === 'pve-node' ? ' node' : ''}`} title={label} aria-label={label} />
+          ? <span key={h.id} className={`dm s-${h.status}${isNode(h) ? ' node' : ''}`} title={label} />
+          : <Link key={h.id} to={`/hosts/${h.id}`} className={`dm s-${h.status}${isNode(h) ? ' node' : ''}`} title={label} aria-label={label} />
       })}
     </div>
   )
@@ -417,12 +430,12 @@ function GroupTiles({ g, shown, open, toggle }) {
     )
   }
   const c = counts(g.items)
-  const node = g.items.find((h) => h.kind === 'pve-node')
+  const node = g.items.find(isNode)
   const nm = node?.last_metrics || {}
   const pct = (v) => (v == null ? '—' : `${Math.round(v)}%`)
   // узел недоступен: про его машины ничего не известно, перечислять их незачем
   const nodeDown = node && !node.online && node.status !== 'waiting'
-  const eye = nodeDown ? [] : shown.filter((h) => h.kind !== 'pve-node' && needsEye(h))
+  const eye = nodeDown ? [] : shown.filter((h) => !isNode(h) && needsEye(h))
     .sort((a, b) => order[a.status] - order[b.status] || a.name.localeCompare(b.name, 'ru'))
   const tone = c.bad ? 'bad' : c.warn ? 'warn' : 'ok'
   // на телефоне спокойный узел свёрнут в одну строку, узел с проблемами раскрыт
@@ -554,10 +567,11 @@ export default function Overview() {
     return (
       <div className="empty">
         <h1 className="headline">Пока нечего охранять</h1>
-        <p className="lead">Подключите первый сервер: панель выдаст одну команду, её нужно выполнить на сервере. Через минуту здесь появятся его графики. Или подключите Proxmox: все узлы и виртуальные машины появятся сами.</p>
+        <p className="lead">Подключите первый сервер: панель выдаст одну команду, её нужно выполнить на сервере. Через минуту здесь появятся его графики. Или подключите Proxmox либо VMware: все узлы, хосты и виртуальные машины появятся сами.</p>
         <div className="row-btns">
           <Link to="/add" className="btn primary">Добавить сервер</Link>
           <Link to="/add/proxmox" className="btn">Подключить Proxmox</Link>
+          <Link to="/add/vmware" className="btn">Подключить VMware</Link>
         </div>
         {inet && <div className="empty-inet"><InetStrip h={inet} /></div>}
       </div>

@@ -3,7 +3,7 @@ import { api } from '../api.js'
 import { Link, navigate } from '../App.jsx'
 import Chart from '../Chart.jsx'
 import { ago, bitrate, bytes, duration, pct, statusText } from '../format.js'
-import { isPVE } from './Overview.jsx'
+import { isNode, isPVE, isVMW } from './Overview.jsx'
 import AvailabilityBar from '../Availability.jsx'
 import { ProblemRows } from './Problems.jsx'
 import Fresh from '../Fresh.jsx'
@@ -67,8 +67,24 @@ export default function HostPage({ id }) {
 
   const inv = h.inventory, m = h.last_metrics || {}, meta = h.meta || {}
   const pve = isPVE(h)
-  const kindName = { 'pve-node': 'Узел Proxmox', 'pve-qemu': 'Виртуальная машина (QEMU)', 'pve-lxc': 'Контейнер (LXC)' }[h.kind]
-  const facts = pve ? [
+  const kindName = { 'pve-node': 'Узел Proxmox', 'pve-qemu': 'Виртуальная машина (QEMU)', 'pve-lxc': 'Контейнер (LXC)', 'vmw-host': 'Хост ESXi', 'vmw-vm': 'Виртуальная машина VMware' }[h.kind]
+  const vmwSrc = meta.source_kind === 'vcenter' ? 'vCenter' : 'ESXi'
+  const facts = isVMW(h) ? [
+    ['Тип', kindName],
+    ['Подключение', meta.source_name && `${meta.source_name} (${vmwSrc})`],
+    meta.cluster ? ['Кластер', meta.cluster] : null,
+    h.kind === 'vmw-vm' ? ['Хост', meta.node] : ['Версия', meta.product || (meta.esx_version && `ESXi ${meta.esx_version}`)],
+    h.kind === 'vmw-host'
+      ? ['Процессор', meta.cpu_model ? `${meta.cores} ядер, ${meta.maxcpu} потоков, ${meta.cpu_model}` : `${meta.maxcpu} потоков`]
+      : ['Ресурсы', `${meta.maxcpu} vCPU, ${bytes(meta.maxmem)} памяти${meta.maxdisk ? `, на хранилище ${bytes(meta.maxdisk)}` : ''}`],
+    h.kind === 'vmw-host' ? ['Память', bytes(meta.maxmem)] : ['Система', meta.guest_os],
+    h.kind === 'vmw-host' ? ['Сервер', meta.vendor] : ['IP-адрес', meta.ip],
+    h.kind === 'vmw-host' && meta.maintenance ? ['Режим обслуживания ESXi', 'включён'] : null,
+    h.kind === 'vmw-vm' && meta.status === 'running' ? ['VMware Tools', { ok: 'работают', notrunning: 'не запущены', notinstalled: 'не установлены' }[meta.tools]] : null,
+    ['Работает без перезагрузки', h.status === 'stopped' ? 'выключена' : meta.uptime ? duration(meta.uptime) : null],
+    h.kind === 'vmw-vm' ? ['Объект vSphere', meta.vmid] : null,
+    ['Данные', `из vSphere API, ${ago(h.last_seen)}`],
+  ].filter((x) => x && x[1] != null && x[1] !== '') : pve ? [
     ['Тип', kindName],
     ['Proxmox', meta.source_name],
     h.kind !== 'pve-node' ? ['Узел', meta.node] : ['Версия', meta.pve_version && `Proxmox VE ${meta.pve_version}`],
@@ -93,6 +109,8 @@ export default function HostPage({ id }) {
     'pve-node': [['cpu', 'Процессор'], ['mem', 'Память'], ['disk', 'Заполнение хранилищ'], ['load', 'Средняя нагрузка (load average)']],
     'pve-qemu': [['cpu', 'Процессор'], ['mem', 'Память'], ['net', 'Сеть'], ...(m.disk_max_mount ? [['disk', 'Диск']] : [])],
     'pve-lxc': [['cpu', 'Процессор'], ['mem', 'Память'], ['disk', 'Диск'], ['net', 'Сеть']],
+    'vmw-host': [['cpu', 'Процессор'], ['mem', 'Память'], ['disk', 'Заполнение хранилищ']],
+    'vmw-vm': [['cpu', 'Процессор'], ['mem', 'Активная память'], ...(m.disk_max_mount ? [['disk', 'Заполнение дисков']] : [])],
   }[h.kind] || [['cpu', 'Процессор'], ['mem', 'Память'], ['disk', 'Заполнение дисков'], ['net', 'Сеть'], ['load', 'Средняя нагрузка (load average)']]
 
   return (
@@ -162,7 +180,7 @@ export default function HostPage({ id }) {
         ))}
       </div>
 
-      {h.kind === 'pve-node' && meta.storages?.length > 0 && (
+      {isNode(h) && meta.storages?.length > 0 && (
         <section className="storages" aria-labelledby="st-h">
           <h2 id="st-h">Хранилища</h2>
           <div className="tbl-box">
@@ -171,7 +189,7 @@ export default function HostPage({ id }) {
               <tbody>
                 {meta.storages.map((st) => (
                   <tr key={st.name}>
-                    <td><b>{st.name}</b>{st.shared && <span className="muted"> общее</span>}</td>
+                    <td><b>{st.name}</b>{st.shared && <span className="muted"> общее</span>}{st.accessible === false && <span className="src-err"> недоступно</span>}</td>
                     <td data-label="Тип">{st.type}</td>
                     <td className="num" data-label="Занято">{bytes(st.used)}</td>
                     <td className="num" data-label="Всего">{bytes(st.total)}</td>
@@ -184,7 +202,13 @@ export default function HostPage({ id }) {
         </section>
       )}
 
+      {!isNode(h) && m.fs && Object.keys(m.fs).length > 0 && h.status !== 'stopped' && <DisksTable fs={m.fs} />}
+
       {h.kind === 'pve-qemu' && !m.disk_max_mount && h.status !== 'stopped' && <GuestBanner state={h.meta?.guest_agent} />}
+      {h.kind === 'vmw-vm' && !m.disk_max_mount && h.status === 'ok' && <ToolsBanner state={h.meta?.tools} />}
+      {h.kind === 'vmw-host' && meta.storages?.some((st) => st.shared) && (
+        <p className="muted small">Общие хранилища видят все хосты кластера. Чтобы одно заполненное хранилище не давало проблему на каждом хосте, Sentra следит за ним у одного хоста.</p>
+      )}
 
       <div className="charts">
         {charts.map(([metric, title]) => <Chart key={metric} hostId={id} metric={metric} range={range} refreshKey={tick} title={title} marks={marksFor(metric, history)} />)}
@@ -195,9 +219,11 @@ export default function HostPage({ id }) {
           <button className="btn danger-btn" onClick={remove}>Удалить из мониторинга</button>
         </div>
       )}
-      {pve && h.meta?.gone !== 1 && (
+      {pve && h.meta?.gone !== 1 && (isVMW(h) ? (
+        <p className="muted small danger">Хосты и машины VMware появляются и исчезают вместе с vCenter. Отключить всё подключение можно на странице <Link to="/add/vmware">«Подключить VMware»</Link>.</p>
+      ) : (
         <p className="muted small danger">Машины Proxmox появляются и исчезают вместе с кластером. Отключить весь Proxmox можно на странице <Link to="/add/proxmox">«Подключить Proxmox»</Link>.</p>
-      )}
+      ))}
     </>
   )
 }
@@ -232,5 +258,52 @@ function GuestBanner({ state }) {
       </ol>
       <p className="muted">После этого диски появятся здесь в течение 10 минут.</p>
     </div>
+  )
+}
+
+// Почему не виден диск ВМ VMware: заполнение дисков гостя ESXi узнаёт от VMware Tools.
+function ToolsBanner({ state }) {
+  if (state === 'ok') {
+    return <p className="banner info">VMware Tools работают, но не сообщили разделы диска. Обычно они появляются через пару минут после запуска машины.</p>
+  }
+  return (
+    <div className="banner info guest-help">
+      <p><b>Диск не виден: {state === 'notinstalled' ? 'в машине не установлены VMware Tools' : 'VMware Tools в машине не запущены'}.</b> VMware видит процессор и память машины, а заполнение диска знает только её система.</p>
+      <ol>
+        <li>Linux: <code>apt install open-vm-tools</code> или <code>dnf install open-vm-tools</code>, затем <code>systemctl enable --now vmtoolsd</code>.</li>
+        <li>Windows: в vSphere Client машина › Guest OS › Install VMware Tools, затем установщик с подключившегося диска.</li>
+      </ol>
+      <p className="muted">Права пользователю Sentra добавлять не нужно. Диски появятся здесь в течение минуты.</p>
+    </div>
+  )
+}
+
+// Все разделы машины: на обзоре виден только самый заполненный, здесь — каждый.
+// m.fs: раздел → [% занято, свободно байт, всего байт].
+function DisksTable({ fs }) {
+  const rows = Object.entries(fs)
+    .map(([mount, [p, free, total]]) => ({ mount, p, free, total, used: Math.max(0, total - free) }))
+    .sort((a, b) => a.mount.localeCompare(b.mount, 'ru', { numeric: true }))
+  const label = (mnt) => (mnt.length === 2 && mnt[1] === ':' ? `Диск ${mnt}` : mnt)
+  return (
+    <section className="storages" aria-labelledby="disks-h">
+      <h2 id="disks-h">Диски <span className="muted small">{rows.length}</span></h2>
+      <div className="tbl-box">
+        <table>
+          <thead><tr><th>Раздел</th><th className="num">Занято</th><th className="num">Свободно</th><th className="num">Всего</th><th>Заполнение</th></tr></thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.mount}>
+                <td><b>{label(r.mount)}</b></td>
+                <td className="num" data-label="Занято">{bytes(r.used)}</td>
+                <td className="num" data-label="Свободно">{bytes(r.free)}</td>
+                <td className="num" data-label="Всего">{bytes(r.total)}</td>
+                <td data-label="Заполнение"><span className="meter-track inline"><span className={`meter-fill ${r.p > 95 ? 'critical' : r.p > 85 ? 'warning' : 'ok'}`} style={{ width: `${Math.min(100, r.p)}%` }} /></span> {pct(r.p)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   )
 }

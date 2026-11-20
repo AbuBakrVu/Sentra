@@ -36,8 +36,9 @@ func newPVEPoller() *pvePoller {
 	return &pvePoller{prev: map[string]netPrev{}, kick: make(chan string, 8)}
 }
 
-// StartPollers запускает фоновый опрос Proxmox. Останавливается с ctx.
+// StartPollers запускает фоновый опрос Proxmox и VMware. Останавливается с ctx.
 func (s *Server) StartPollers(ctx context.Context) {
+	s.startVMW(ctx)
 	go func() {
 		t := time.NewTicker(pvePollEvery)
 		defer t.Stop()

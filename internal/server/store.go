@@ -64,6 +64,20 @@ CREATE TABLE IF NOT EXISTS pve_sources (
   summary TEXT NOT NULL DEFAULT '{}',
   created_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS vmw_sources (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  name TEXT NOT NULL,
+  url TEXT NOT NULL,
+  username TEXT NOT NULL,
+  password TEXT NOT NULL,
+  fingerprint TEXT NOT NULL DEFAULT '',
+  api_type TEXT NOT NULL DEFAULT '',
+  last_ok INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT NOT NULL DEFAULT '',
+  summary TEXT NOT NULL DEFAULT '{}',
+  created_at INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
@@ -72,7 +86,7 @@ CREATE TABLE IF NOT EXISTS settings (
 
 // миграции колонок: SQLite не умеет ADD COLUMN IF NOT EXISTS
 var hostColumns = []struct{ name, def string }{
-	{"kind", "TEXT NOT NULL DEFAULT 'agent'"},     // agent, pve-node, pve-qemu, pve-lxc, inet
+	{"kind", "TEXT NOT NULL DEFAULT 'agent'"},     // agent, pve-node, pve-qemu, pve-lxc, vmw-host, vmw-vm, inet
 	{"source_id", "TEXT NOT NULL DEFAULT ''"},     // id подключения Proxmox
 	{"ext_id", "TEXT NOT NULL DEFAULT ''"},        // qemu/100, node/pve1
 	{"meta", "TEXT NOT NULL DEFAULT '{}'"},        // данные из Proxmox: узел, vmid, статус
@@ -496,7 +510,7 @@ func (s *Store) PVEHostIDs(sourceID string) map[string]string {
 // PVEMachinesOn — сколько машин подключения стоит на узле (без удалённых).
 func (s *Store) PVEMachinesOn(sourceID, node string) int {
 	var n int
-	s.db.QueryRow(`SELECT COUNT(*) FROM hosts WHERE source_id=? AND kind IN ('pve-qemu','pve-lxc')
+	s.db.QueryRow(`SELECT COUNT(*) FROM hosts WHERE source_id=? AND kind IN ('pve-qemu','pve-lxc','vmw-vm')
 		AND json_extract(meta,'$.node')=? AND COALESCE(json_extract(meta,'$.gone'),0)=0`, sourceID, node).Scan(&n)
 	return n
 }

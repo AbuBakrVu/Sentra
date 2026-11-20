@@ -11,6 +11,7 @@ export function AddTabs({ current }) {
     <nav className="tabs" aria-label="Что подключить">
       {tab('/add', 'Сервер с агентом', 'server')}
       {tab('/add/proxmox', 'Proxmox', 'pve')}
+      {tab('/add/vmware', 'VMware', 'vmw')}
     </nav>
   )
 }
@@ -96,7 +97,7 @@ function ConsoleSteps() {
   )
 }
 
-function CopyBlock({ text }) {
+export function CopyBlock({ text }) {
   const [copied, setCopied] = useState(false)
   async function copy() {
     try { await navigator.clipboard.writeText(text) } catch { return }
