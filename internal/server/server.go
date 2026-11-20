@@ -44,6 +44,7 @@ type Server struct {
 	loginFails map[string][]time.Time
 	pve        *pvePoller
 	vmw        *vmwPoller
+	snmp       *snmpPoller
 	eng        *Engine
 	inet       *inetPoller
 	guest      *guestPoller
@@ -75,7 +76,7 @@ func New(cfg Config, web fs.FS) (*Server, *tls.Certificate, error) {
 		os.WriteFile(pf, []byte(pw+"\n"), 0o600)
 		log.Printf("Создан администратор: логин admin, пароль %s (сохранён в %s). Смените его после входа.", pw, pf)
 	}
-	s := &Server{cfg: cfg, st: st, vm: NewVM(cfg.VMURL), pin: pin, web: web, loginFails: map[string][]time.Time{}, pve: newPVEPoller(), vmw: newVMWPoller(), eng: NewEngine(st), inet: newInetPoller(), guest: newGuestPoller()}
+	s := &Server{cfg: cfg, st: st, vm: NewVM(cfg.VMURL), pin: pin, web: web, loginFails: map[string][]time.Time{}, pve: newPVEPoller(), vmw: newVMWPoller(), snmp: newSNMPPoller(), eng: NewEngine(st), inet: newInetPoller(), guest: newGuestPoller()}
 	return s, &cert, nil
 }
 
@@ -110,6 +111,10 @@ func (s *Server) Handler() http.Handler {
 	m.HandleFunc("POST /api/vmware", s.auth(s.addVMW))
 	m.HandleFunc("DELETE /api/vmware/{id}", s.auth(s.deleteVMW))
 	m.HandleFunc("POST /api/vmware/{id}/trust", s.auth(s.trustVMW))
+	m.HandleFunc("GET /api/snmp", s.auth(s.listSNMP))
+	m.HandleFunc("POST /api/snmp", s.auth(s.addSNMP))
+	m.HandleFunc("PUT /api/snmp/{id}", s.auth(s.updateSNMP))
+	m.HandleFunc("DELETE /api/snmp/{id}", s.auth(s.deleteSNMP))
 	m.HandleFunc("GET /api/inet", s.auth(s.getInet))
 	m.HandleFunc("PUT /api/inet", s.auth(s.putInet))
 	m.HandleFunc("GET /api/inet/outages", s.auth(s.inetOutages))
@@ -498,7 +503,11 @@ func view(h *Host, open []*Problem) hostView {
 		if pve {
 			v.Issues = append(v.Issues, "Нет данных от "+virtName(h.Kind))
 		} else {
-			v.Issues = append(v.Issues, "Нет данных от агента")
+			if h.Kind == kindSNMP {
+				v.Issues = append(v.Issues, "Нет ответа по SNMP")
+			} else {
+				v.Issues = append(v.Issues, "Нет данных от агента")
+			}
 		}
 		return v
 	}
@@ -635,6 +644,15 @@ func (s *Server) deleteHost(w http.ResponseWriter, r *http.Request, _ *User) {
 			httpErr(w, 400, "машина есть в Proxmox и вернётся при следующем опросе. Удалите её в Proxmox или отключите весь Proxmox в разделе «Добавить»")
 			return
 		}
+	}
+	if h, err := s.st.Host(r.PathValue("id")); err == nil && h.Kind == kindSNMP {
+		// у SNMP-устройства нет «источника» отдельно от него: удаляем вместе с доступом
+		if err := s.st.DeleteSNMP(h.SourceID); err != nil {
+			httpErr(w, 500, err.Error())
+			return
+		}
+		writeJSON(w, 200, map[string]bool{"ok": true})
+		return
 	}
 	if err := s.st.DeleteHost(r.PathValue("id")); err != nil {
 		httpErr(w, 500, err.Error())

@@ -242,8 +242,8 @@ code { font-family: ui-monospace, 'SF Mono', Consolas, monospace; font-size: 0.9
 .form { display: grid; gap: 14px; max-width: 420px; }
 .form h2 { font-size: 18px; margin: 12px 0 0; }
 .form label { display: grid; gap: 4px; font-size: 14px; color: var(--ink-2); }
-.form input { font: inherit; color: var(--ink); padding: 9px 11px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
-.form input:focus { border-color: var(--focus); outline: none; box-shadow: 0 0 0 3px rgba(36, 86, 59, 0.14); }
+.form input, .form select { font: inherit; color: var(--ink); padding: 9px 11px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.form input:focus, .form select:focus { border-color: var(--focus); outline: none; box-shadow: 0 0 0 3px rgba(36, 86, 59, 0.14); }
 .banner { margin: 0; padding: 10px 14px; border-radius: var(--radius); font-size: 14px; }
 .banner.critical { background: var(--crit-bg); color: var(--crit); }
 .banner.ok { background: var(--ok-bg); color: var(--ok); }
@@ -622,3 +622,6 @@ body.col-dragging { cursor: col-resize; user-select: none; }
 .guest-help .muted { margin: 0; }
 .banner.warning { background: var(--warn-row); color: var(--ink); border: 1px solid #EBD9AA; margin-bottom: 16px; }
 .gcard-down { margin: 0 0 4px; padding-top: 10px; border-top: 1px solid var(--line-soft); font-size: 14.5px; color: var(--crit); }
+
+.row-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.if-down td:first-child b { color: var(--critical, #b3261e); }
