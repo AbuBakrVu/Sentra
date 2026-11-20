@@ -8,6 +8,7 @@ const P = {
   logout: <><path d="M14 4h4.5A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5H14" /><path d="M10 8l-4 4 4 4M6 12h9" /></>,
   bell: <><path d="M6.5 16.5V11a5.5 5.5 0 0 1 11 0v5.5l1.5 2h-14l1.5-2Z" strokeLinejoin="round" /><path d="M10 20.5a2.2 2.2 0 0 0 4 0" /></>,
   plus: <path d="M12 5v14M5 12h14" />,
+  network: <><rect x="9" y="3.5" width="6" height="5" rx="1.2" /><rect x="3.5" y="15.5" width="6" height="5" rx="1.2" /><rect x="14.5" y="15.5" width="6" height="5" rx="1.2" /><path d="M12 8.5V12M6.5 15.5V12h11v3.5" strokeLinejoin="round" /></>,
   search: <><circle cx="11" cy="11" r="6.5" /><path d="m16 16 4 4" /></>,
   arrow: <path d="M8 16 16 8M9.5 8H16v6.5" />,
   check: <><circle cx="12" cy="12" r="8.5" /><path d="m8.5 12.2 2.4 2.4 4.6-4.8" /></>,

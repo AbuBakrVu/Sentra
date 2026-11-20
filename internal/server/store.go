@@ -78,6 +78,21 @@ CREATE TABLE IF NOT EXISTS vmw_sources (
   summary TEXT NOT NULL DEFAULT '{}',
   created_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS snmp_devices (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  addr TEXT NOT NULL,
+  version TEXT NOT NULL,
+  community TEXT NOT NULL DEFAULT '',
+  username TEXT NOT NULL DEFAULT '',
+  auth_proto TEXT NOT NULL DEFAULT '',
+  auth_pass TEXT NOT NULL DEFAULT '',
+  priv_proto TEXT NOT NULL DEFAULT '',
+  priv_pass TEXT NOT NULL DEFAULT '',
+  last_ok INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
@@ -86,7 +101,7 @@ CREATE TABLE IF NOT EXISTS settings (
 
 // миграции колонок: SQLite не умеет ADD COLUMN IF NOT EXISTS
 var hostColumns = []struct{ name, def string }{
-	{"kind", "TEXT NOT NULL DEFAULT 'agent'"},     // agent, pve-node, pve-qemu, pve-lxc, vmw-host, vmw-vm, inet
+	{"kind", "TEXT NOT NULL DEFAULT 'agent'"},     // agent, pve-node, pve-qemu, pve-lxc, vmw-host, vmw-vm, snmp, inet
 	{"source_id", "TEXT NOT NULL DEFAULT ''"},     // id подключения Proxmox
 	{"ext_id", "TEXT NOT NULL DEFAULT ''"},        // qemu/100, node/pve1
 	{"meta", "TEXT NOT NULL DEFAULT '{}'"},        // данные из Proxmox: узел, vmid, статус

@@ -3,6 +3,7 @@ module sentra
 go 1.24.7
 
 require (
+	github.com/gosnmp/gosnmp v1.47.0
 	github.com/mattn/go-sqlite3 v1.14.24
 	github.com/vmware/govmomi v0.54.0
 )
