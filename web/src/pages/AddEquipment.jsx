@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
-import { Link } from '../App.jsx'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { api } from '../api.js'
 import Icon from '../Icons.jsx'
+import { equipmentSetup } from './EquipmentSetup.jsx'
 import './AddEquipment.css'
 
 const categories = [
@@ -44,7 +44,7 @@ const categories = [
 
 const quickSearch = ['Ideco', 'MikroTik', 'ESXi', 'Proxmox', 'Ubuntu', 'Synology']
 
-function useConnectionCounts() {
+function useConnectionCounts(refresh) {
   const [counts, setCounts] = useState({})
   useEffect(() => {
     let active = true
@@ -63,14 +63,40 @@ function useConnectionCounts() {
       if (active && typeof config?.enabled === 'boolean') setCounts((prev) => ({ ...prev, internet: Number(config.enabled) }))
     }).catch(() => {})
     return () => { active = false }
-  }, [])
+  }, [refresh])
   return counts
+}
+
+function ConnectionWindow({ item, close }) {
+  const dialog = useRef(null)
+  useLayoutEffect(() => {
+    if (!dialog.current.open) dialog.current.showModal()
+  }, [])
+
+  return (
+    <dialog ref={dialog} className="equipment-dialog" aria-labelledby="equipment-dialog-title" onClose={close}>
+      <header className="equipment-dialog-header">
+        <div>
+          <h2 id="equipment-dialog-title">{item.action || 'Подключить'} {item.title}</h2>
+          <p>{item.detail}</p>
+        </div>
+        <button className="icon-btn" type="button" aria-label="Закрыть окно подключения" onClick={() => dialog.current.close()}>
+          <Icon name="close" size={20} />
+        </button>
+      </header>
+      <div className="equipment-dialog-content">
+        {equipmentSetup(item.href, true)}
+      </div>
+    </dialog>
+  )
 }
 
 export default function AddEquipment() {
   const [selected, setSelected] = useState('network')
   const [query, setQuery] = useState('')
-  const counts = useConnectionCounts()
+  const [connecting, setConnecting] = useState(null)
+  const [refresh, setRefresh] = useState(0)
+  const counts = useConnectionCounts(refresh)
   const category = categories.find((item) => item.id === selected)
   const terms = query.trim().toLocaleLowerCase('ru').split(/\s+/).filter(Boolean)
   const searching = terms.length > 0
@@ -117,13 +143,14 @@ export default function AddEquipment() {
                 <li key={item.href} className="equipment-item">
                   <div><h3>{item.title}</h3><p>{item.detail}</p></div>
                   {item.href.startsWith('/add/snmp') && <small className="equipment-time">≈ 2 мин</small>}
-                  <Link to={item.href} className="btn primary equipment-connect" aria-label={`${item.action || 'Подключить'} ${item.title}`}>{item.action || 'Подключить'}</Link>
+                  <button type="button" className="btn primary equipment-connect" aria-haspopup="dialog" aria-label={`${item.action || 'Подключить'} ${item.title}`} onClick={() => setConnecting(item)}>{item.action || 'Подключить'}</button>
                 </li>
               ))}
             </ul>
           )}
         </section>
       </div>
+      {connecting && <ConnectionWindow item={connecting} close={() => { setConnecting(null); setRefresh((value) => value + 1) }} />}
     </div>
   )
 }

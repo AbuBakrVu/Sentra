@@ -91,7 +91,7 @@ const empty = { name: '', addr: '', version: '3', community: '', user: 'sentra',
 
 const models = { mikrotik: 'MikroTik', usergate: 'UserGate', nas: 'NAS' }
 
-export default function AddSNMP({ initialDevice = 'ideco' }) {
+export default function AddSNMP({ initialDevice = 'ideco', inDialog = false }) {
   const [f, setF] = useState(empty)
   const [edit, setEdit] = useState(null) // устройство, которому меняем доступ
   const [busy, setBusy] = useState(false)
@@ -130,11 +130,15 @@ export default function AddSNMP({ initialDevice = 'ideco' }) {
   const v3 = f.version === '3'
   return (
     <div className="narrow">
-      <h1 className="headline">{how === 'other' && models[initialDevice] ? `Подключить ${models[initialDevice]}` : 'Подключить по SNMP'}</h1>
-      <p className="lead">Для межсетевых экранов, маршрутизаторов и коммутаторов, куда агент не поставить. Sentra будет следить за процессором, памятью, дисками и каждым интерфейсом: трафик и связь.</p>
-      <AddTabs current="snmp" />
+      {!inDialog && (
+        <>
+          <h1 className="headline">{how === 'other' && models[initialDevice] ? `Подключить ${models[initialDevice]}` : 'Подключить по SNMP'}</h1>
+          <p className="lead">Для межсетевых экранов, маршрутизаторов и коммутаторов, куда агент не поставить. Sentra будет следить за процессором, памятью, дисками и каждым интерфейсом: трафик и связь.</p>
+          <AddTabs current="snmp" />
+        </>
+      )}
 
-      <ol className="steps">
+      <ol className="steps equipment-setup-columns">
         <li>
           <h2>Включите SNMP на устройстве</h2>
           <div className="toolbar" role="group" aria-label="Устройство">
@@ -205,7 +209,7 @@ export default function AddSNMP({ initialDevice = 'ideco' }) {
         </li>
       </ol>
 
-      <Devices reloadKey={done} onEdit={startEdit} />
+      {!inDialog && <Devices reloadKey={done} onEdit={startEdit} />}
 
       <details className="help">
         <summary>Если что-то пошло не так</summary>

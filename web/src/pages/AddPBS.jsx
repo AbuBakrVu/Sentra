@@ -2,19 +2,86 @@ import { useEffect, useState } from 'react'
 import { api } from '../api.js'
 import { Link } from '../App.jsx'
 import { ago } from '../format.js'
-import { AddTabs } from './AddProxmox.jsx'
+import { AddTabs, CopyBlock } from './AddProxmox.jsx'
 
 const initial = { url: '', name: '', datastore: '', namespace: '', token_id: '', secret: '', fingerprint: '', warn_hours: '36' }
 
-export default function AddPBS() {
+function TokenInstructions({ datastore }) {
+  const [method, setMethod] = useState('web')
+  const name = datastore.trim()
+  const validName = /^[A-Za-z0-9_][A-Za-z0-9_.-]*$/.test(name)
+  const path = `/datastore/${validName ? name : 'backup'}`
+  const commands = [
+    {
+      command: 'proxmox-backup-manager user create sentra@pbs --comment "Sentra monitoring"',
+      what: <>Создаёт пользователя <code>sentra</code> во встроенной базе PBS (<code>@pbs</code>). Параметр <code>--comment</code> добавляет описание к учётной записи.</>,
+      why: 'Для мониторинга нужна отдельная учётная запись. Её можно узнать по описанию и отключить, когда мониторинг больше не нужен.',
+    },
+    {
+      command: 'proxmox-backup-manager user generate-token sentra@pbs monitor',
+      what: <>Создаёт токен <code>monitor</code> для пользователя <code>sentra@pbs</code>. В выводе <code>tokenid</code> содержит ID токена, а <code>value</code> содержит секрет. Вставьте оба значения в форму Sentra.</>,
+      why: 'Sentra подключается по этому токену. При необходимости токен можно отозвать отдельно от учётной записи.',
+    },
+    {
+      command: `proxmox-backup-manager acl update '${path}' DatastoreAudit --auth-id sentra@pbs --propagate true`,
+      what: <>Выдаёт пользователю <code>sentra@pbs</code> роль <code>DatastoreAudit</code> на пути <code>{path}</code>. Флаг <code>--propagate true</code> распространяет права на пространства имён внутри хранилища.</>,
+      why: 'PBS ограничивает права токена правами его владельца. Пользователю тоже нужен доступ к метрикам хранилища и списку резервных копий.',
+    },
+    {
+      command: `proxmox-backup-manager acl update '${path}' DatastoreAudit --auth-id 'sentra@pbs!monitor' --propagate true`,
+      what: <>Выдаёт эту же роль самому токену. После <code>--auth-id</code> указывается полный ID <code>sentra@pbs!monitor</code> в одинарных кавычках, чтобы оболочка передала символ <code>!</code> как часть ID.</>,
+      why: 'У нового токена пустой список прав. Эта команда даёт Sentra доступ на просмотр выбранного хранилища.',
+    },
+  ]
+  const commandBlock = commands.map(({ command }) => command).join('\n')
+
+  return (
+    <>
+      <h2>Создайте доступ только для чтения в PBS</h2>
+      <p>Sentra нужен отдельный пользователь и API-токен с ролью <code>DatastoreAudit</code> на выбранном хранилище.</p>
+      <div className="toolbar" role="group" aria-label="Способ настройки доступа PBS">
+        <button type="button" className={method === 'web' ? 'seg active' : 'seg'} aria-pressed={method === 'web'} onClick={() => setMethod('web')}>В веб-интерфейсе</button>
+        <button type="button" className={method === 'console' ? 'seg active' : 'seg'} aria-pressed={method === 'console'} onClick={() => setMethod('console')}>В консоли</button>
+      </div>
+      {!validName && <p>Укажите имя хранилища в поле <b>Datastore</b>, чтобы подставить его в путь прав. Пока показан пример <code>backup</code>.</p>}
+      {method === 'web' ? (
+        <ol className="howto">
+          <li>Откройте <b>Configuration → Access Control</b> на PBS. В разделе пользователей создайте <code>sentra@pbs</code>.</li>
+          <li>В разделе API-токенов создайте токен <code>monitor</code> для <code>sentra@pbs</code>. Сохраните ID токена и секрет.</li>
+          <li>В <b>Permissions → Add</b> добавьте <b>User Permission</b> для <code>sentra@pbs</code> и <b>API Token Permission</b> для <code>sentra@pbs!monitor</code>. Для обоих укажите путь <code>{path}</code>, роль <code>DatastoreAudit</code> и оставьте <b>Propagate</b> включённым.</li>
+        </ol>
+      ) : (
+        <>
+          <p>Откройте консоль самого сервера PBS и выполните команды от <code>root</code>.</p>
+          <CopyBlock key={commandBlock} text={commandBlock} />
+          <ol className="howto cmds">
+            {commands.map(({ command, what, why }) => (
+              <li key={command}>
+                <code className="cmd-line">{command}</code>
+                <p>{what}</p>
+                <p className="why">Зачем: {why}</p>
+              </li>
+            ))}
+          </ol>
+          <p>Если пользователь уже есть, пропустите его создание. Если уже есть токен, используйте его ID и сохранённый секрет.</p>
+        </>
+      )}
+      <p className="muted small">Секрет показывается только при создании токена.</p>
+    </>
+  )
+}
+
+export default function AddPBS({ inDialog = false }) {
   const [form, setForm] = useState(initial)
   const [sources, setSources] = useState([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [done, setDone] = useState(null)
   const [listError, setListError] = useState('')
   const set = (field) => (event) => setForm((value) => ({ ...value, [field]: event.target.value }))
 
   useEffect(() => {
+    if (inDialog) return
     let active = true
     const load = () => api.pbsList()
       .then((list) => { if (active) { setSources(list); setListError('') } })
@@ -22,15 +89,17 @@ export default function AddPBS() {
     load()
     const timer = setInterval(load, 15000)
     return () => { active = false; clearInterval(timer) }
-  }, [])
+  }, [inDialog])
 
   async function submit(event) {
     event.preventDefault()
     setBusy(true)
     setError('')
+    setDone(null)
     try {
       const source = await api.pbsAdd({ ...form, warn_hours: Number(form.warn_hours) })
       setSources((list) => [...list.filter((p) => p.id !== source.id), source])
+      setDone(source)
       setForm(initial)
     } catch (err) {
       setError(err.message)
@@ -39,15 +108,27 @@ export default function AddPBS() {
     }
   }
 
+  const optionalFields = (
+    <>
+      <label>Название в Sentra <input value={form.name} onChange={set('name')} placeholder="По умолчанию — имя datastore" maxLength={100} /></label>
+      <label>Предупреждать, если копия старше (ч) <input type="number" value={form.warn_hours} onChange={set('warn_hours')} min={1} max={8760} required /></label>
+      <label>Отпечаток SHA-256 для самоподписанного сертификата <input value={form.fingerprint} onChange={set('fingerprint')} placeholder="AB:CD:…" autoComplete="off" spellCheck={false} /></label>
+      <p className="muted small">Отпечаток можно посмотреть на PBS командой <code>proxmox-backup-manager cert info</code>.</p>
+    </>
+  )
+
   return (
     <div className="narrow">
-      <h1 className="headline">Подключить Proxmox Backup Server</h1>
-      <p className="lead">Sentra проверяет свободное место и возраст последней завершённой копии каждой группы.</p>
-      <AddTabs current="pbs" />
-      <ol className="steps">
+      {!inDialog && (
+        <>
+          <h1 className="headline">Подключить Proxmox Backup Server</h1>
+          <p className="lead">Sentra проверяет свободное место и возраст последней завершённой копии каждой группы.</p>
+          <AddTabs current="pbs" />
+        </>
+      )}
+      <ol className="steps equipment-setup-columns">
         <li>
-          <h2>Создайте токен в PBS</h2>
-          <p>В <b>Configuration → Access Control</b> создайте отдельного пользователя и API-токен. Назначьте обоим роль <code>DatastoreAudit</code> на <code>/datastore/имя</code> с наследованием прав.</p>
+          <TokenInstructions datastore={form.datastore} />
         </li>
         <li>
           <h2>Настройте мониторинг хранилища</h2>
@@ -57,17 +138,20 @@ export default function AddPBS() {
             <label>Пространство имён <input value={form.namespace} onChange={set('namespace')} placeholder="Пустое поле — корневое пространство" autoComplete="off" /></label>
             <label>ID токена <input value={form.token_id} onChange={set('token_id')} placeholder="sentra@pbs!monitor" required autoComplete="off" /></label>
             <label>Секрет токена <input type="password" value={form.secret} onChange={set('secret')} required autoComplete="new-password" /></label>
-            <label>Название в Sentra <input value={form.name} onChange={set('name')} placeholder="По умолчанию — имя datastore" maxLength={100} /></label>
-            <label>Предупреждать, если копия старше (ч) <input type="number" value={form.warn_hours} onChange={set('warn_hours')} min={1} max={8760} required /></label>
-            <label>Отпечаток SHA-256 для самоподписанного сертификата <input value={form.fingerprint} onChange={set('fingerprint')} placeholder="AB:CD:…" autoComplete="off" spellCheck={false} /></label>
-            <p className="muted small">Отпечаток можно посмотреть на PBS командой <code>proxmox-backup-manager cert info</code>.</p>
+            {inDialog ? (
+              <details className="help" onInvalid={(event) => { event.currentTarget.open = true }}>
+                <summary>Дополнительные параметры и сертификат</summary>
+                <div className="equipment-optional-fields">{optionalFields}</div>
+              </details>
+            ) : optionalFields}
             {error && <p className="banner critical" role="alert">{error}</p>}
+            {inDialog && done && <p className="banner ok" role="status">Хранилище подключено. <Link to={`/hosts/${done.id}`}>Открыть {done.name}</Link></p>}
             <div><button className="btn primary" disabled={busy}>{busy ? 'Проверяем подключение…' : 'Подключить'}</button></div>
           </form>
         </li>
       </ol>
 
-      {(sources.length > 0 || listError) && <section className="sources" aria-labelledby="pbs-src">
+      {!inDialog && (sources.length > 0 || listError) && <section className="sources" aria-labelledby="pbs-src">
         <h2 id="pbs-src">Подключённые хранилища</h2>
         {listError && <p className="banner critical" role="alert">{listError}</p>}
         <ul className="src-list">

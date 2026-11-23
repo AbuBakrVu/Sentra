@@ -3,12 +3,8 @@ import Icon from './Icons.jsx'
 import { api } from './api.js'
 import Overview from './pages/Overview.jsx'
 import HostPage from './pages/HostPage.jsx'
-import AddServer from './pages/AddServer.jsx'
 import AddEquipment from './pages/AddEquipment.jsx'
-import AddProxmox from './pages/AddProxmox.jsx'
-import AddPBS from './pages/AddPBS.jsx'
-import AddVMware from './pages/AddVMware.jsx'
-import AddSNMP from './pages/AddSNMP.jsx'
+import { equipmentSetup } from './pages/EquipmentSetup.jsx'
 import Settings from './pages/Settings.jsx'
 import Login from './pages/Login.jsx'
 import Problems from './pages/Problems.jsx'
@@ -67,22 +63,14 @@ export default function App() {
 
   let page
   const host = path.match(/^\/hosts\/([a-z0-9_-]+)$/)
-  const snmpDevice = path.match(/^\/add\/snmp\/(mikrotik|usergate|nas|other)$/)?.[1]
   const catalog = path === '/add'
   if (path === '/internet' || host?.[1] === 'internet') page = <Internet />
   else if (host) page = <HostPage id={host[1]} />
   else if (catalog) page = <AddEquipment />
-  else if (path === '/add/linux') page = <AddServer />
-  else if (path === '/add/proxmox') page = <AddProxmox />
-  else if (path === '/add/pbs') page = <AddPBS />
-  else if (path === '/add/vmware') page = <AddVMware />
-  else if (path === '/add/snmp') page = <AddSNMP />
-  else if (path === '/add/vmware/esxi') page = <AddVMware key="esxi" initialTarget="esxi" />
-  else if (snmpDevice) page = <AddSNMP key={snmpDevice} initialDevice={snmpDevice} />
   else if (path === '/settings') page = <Settings />
   else if (path === '/problems') page = <Problems />
   else if (path === '/brief') page = <Brief />
-  else page = <Overview />
+  else page = equipmentSetup(path) || <Overview />
 
   return (
     <div className="shell">
