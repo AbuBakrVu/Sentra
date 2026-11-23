@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api } from '../api.js'
 import { Link } from '../App.jsx'
 import { ago, plural } from '../format.js'
@@ -101,17 +101,34 @@ function ConsoleSteps() {
 }
 
 export function CopyBlock({ text }) {
+  const code = useRef(null)
   const [copied, setCopied] = useState(false)
+  const [selected, setSelected] = useState(false)
   async function copy() {
-    try { await navigator.clipboard.writeText(text) } catch { return }
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch {
+      const selection = window.getSelection()
+      if (!selection || !code.current) return
+      const range = document.createRange()
+      range.selectNodeContents(code.current)
+      selection.removeAllRanges()
+      selection.addRange(range)
+      setSelected(true)
+      return
+    }
+    setSelected(false)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
   return (
-    <div className="cmd">
-      <code style={{ whiteSpace: 'pre-wrap' }}>{text}</code>
-      <button className="btn primary" type="button" onClick={copy}>{copied ? 'Скопировано' : 'Копировать'}</button>
-    </div>
+    <>
+      <div className="cmd">
+        <code ref={code} style={{ whiteSpace: 'pre-wrap' }}>{text}</code>
+        <button className="btn primary" type="button" onClick={copy}>{copied ? 'Скопировано' : 'Копировать'}</button>
+      </div>
+      {selected && <p className="muted small" role="status">Команды выделены. Нажмите Ctrl+C или ⌘C.</p>}
+    </>
   )
 }
 

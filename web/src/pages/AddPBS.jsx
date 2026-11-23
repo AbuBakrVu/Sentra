@@ -2,9 +2,49 @@ import { useEffect, useState } from 'react'
 import { api } from '../api.js'
 import { Link } from '../App.jsx'
 import { ago } from '../format.js'
-import { AddTabs } from './AddProxmox.jsx'
+import { AddTabs, CopyBlock } from './AddProxmox.jsx'
 
 const initial = { url: '', name: '', datastore: '', namespace: '', token_id: '', secret: '', fingerprint: '', warn_hours: '36' }
+
+function TokenInstructions({ datastore }) {
+  const [method, setMethod] = useState('web')
+  const name = datastore.trim()
+  const validName = /^[A-Za-z0-9_][A-Za-z0-9_.-]*$/.test(name)
+  const path = `/datastore/${validName ? name : 'backup'}`
+  const commands = [
+    'proxmox-backup-manager user create sentra@pbs --comment "Sentra monitoring"',
+    'proxmox-backup-manager user generate-token sentra@pbs monitor',
+    `proxmox-backup-manager acl update '${path}' DatastoreAudit --auth-id sentra@pbs --propagate true`,
+    `proxmox-backup-manager acl update '${path}' DatastoreAudit --auth-id 'sentra@pbs!monitor' --propagate true`,
+  ].join('\n')
+
+  return (
+    <>
+      <h2>Создайте доступ только для чтения в PBS</h2>
+      <p>Sentra нужен отдельный пользователь и API-токен с ролью <code>DatastoreAudit</code> на выбранном хранилище.</p>
+      <div className="toolbar" role="group" aria-label="Способ настройки доступа PBS">
+        <button type="button" className={method === 'web' ? 'seg active' : 'seg'} aria-pressed={method === 'web'} onClick={() => setMethod('web')}>В веб-интерфейсе</button>
+        <button type="button" className={method === 'console' ? 'seg active' : 'seg'} aria-pressed={method === 'console'} onClick={() => setMethod('console')}>В консоли</button>
+      </div>
+      {!validName && <p>Укажите имя хранилища в поле <b>Datastore</b>, чтобы подставить его в путь прав. Пока показан пример <code>backup</code>.</p>}
+      {method === 'web' ? (
+        <ol className="howto">
+          <li>Откройте <b>Configuration → Access Control</b> на PBS. В разделе пользователей создайте <code>sentra@pbs</code>.</li>
+          <li>В разделе API-токенов создайте токен <code>monitor</code> для <code>sentra@pbs</code>. Сохраните ID токена и секрет.</li>
+          <li>В <b>Permissions → Add</b> добавьте <b>User Permission</b> для <code>sentra@pbs</code> и <b>API Token Permission</b> для <code>sentra@pbs!monitor</code>. Для обоих укажите путь <code>{path}</code>, роль <code>DatastoreAudit</code> и оставьте <b>Propagate</b> включённым.</li>
+        </ol>
+      ) : (
+        <>
+          <p>Откройте консоль самого сервера PBS и выполните команды от <code>root</code>.</p>
+          <CopyBlock key={commands} text={commands} />
+          <p>Команда <code>generate-token</code> выводит <code>tokenid</code> и <code>value</code>. В форму Sentra вставьте их как ID и секрет токена.</p>
+          <p>Если пользователь уже есть, пропустите его создание. Если уже есть токен, используйте его ID и сохранённый секрет.</p>
+        </>
+      )}
+      <p className="muted small">Секрет показывается только при создании токена.</p>
+    </>
+  )
+}
 
 export default function AddPBS({ inDialog = false }) {
   const [form, setForm] = useState(initial)
@@ -63,8 +103,7 @@ export default function AddPBS({ inDialog = false }) {
       )}
       <ol className="steps equipment-setup-columns">
         <li>
-          <h2>Создайте токен в PBS</h2>
-          <p>В <b>Configuration → Access Control</b> создайте отдельного пользователя и API-токен. Назначьте обоим роль <code>DatastoreAudit</code> на <code>/datastore/имя</code> с наследованием прав.</p>
+          <TokenInstructions datastore={form.datastore} />
         </li>
         <li>
           <h2>Настройте мониторинг хранилища</h2>
