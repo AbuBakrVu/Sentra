@@ -174,7 +174,7 @@ function Sources({ reloadKey }) {
   )
 }
 
-export default function AddProxmox() {
+export default function AddProxmox({ inDialog = false }) {
   const [f, setF] = useState({ name: '', url: '', token_id: 'sentra@pve!monitor', secret: '', fingerprint: '' })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
@@ -194,11 +194,15 @@ export default function AddProxmox() {
 
   return (
     <div className="narrow">
-      <h1 className="headline">Подключить Proxmox</h1>
-      <p className="lead">Sentra читает данные через API Proxmox, на узлы и в машины ничего ставить не нужно. Появятся все узлы кластера, виртуальные машины и контейнеры, новые машины добавятся сами.</p>
-      <AddTabs current="pve" />
+      {!inDialog && (
+        <>
+          <h1 className="headline">Подключить Proxmox</h1>
+          <p className="lead">Sentra читает данные через API Proxmox, на узлы и в машины ничего ставить не нужно. Появятся все узлы кластера, виртуальные машины и контейнеры, новые машины добавятся сами.</p>
+          <AddTabs current="pve" />
+        </>
+      )}
 
-      <ol className="steps">
+      <ol className="steps equipment-setup-columns">
         <li>
           <h2>Создайте в Proxmox доступ только для чтения</h2>
           <p>Sentra нужен пользователь с правом только смотреть и ключ доступа (API-токен) для него. Так Sentra видит узлы, машины и хранилища, но ничего не может в них изменить. Это можно сделать мышкой в веб-интерфейсе Proxmox или тремя командами в консоли, результат одинаковый.</p>
@@ -262,7 +266,7 @@ export default function AddProxmox() {
         </li>
       </ol>
 
-      <Sources reloadKey={done?.id} />
+      {!inDialog && <Sources reloadKey={done?.id} />}
 
       <details className="help">
         <summary>Если что-то пошло не так</summary>

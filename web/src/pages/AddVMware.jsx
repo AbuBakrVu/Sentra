@@ -118,7 +118,7 @@ function Sources({ reloadKey }) {
   )
 }
 
-export default function AddVMware({ initialTarget = 'vcenter' }) {
+export default function AddVMware({ initialTarget = 'vcenter', inDialog = false }) {
   const [f, setF] = useState({ name: '', url: '', username: initialTarget === 'esxi' ? 'sentra' : 'sentra@vsphere.local', password: '', fingerprint: '' })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
@@ -143,11 +143,15 @@ export default function AddVMware({ initialTarget = 'vcenter' }) {
 
   return (
     <div className="narrow">
-      <h1 className="headline">Подключить VMware</h1>
-      <p className="lead">Sentra читает данные через vSphere API, на хосты и в машины ничего ставить не нужно. Подойдёт vCenter или отдельный хост ESXi. Появятся все хосты, виртуальные машины и хранилища, новые машины добавятся сами.</p>
-      <AddTabs current="vmw" />
+      {!inDialog && (
+        <>
+          <h1 className="headline">Подключить VMware</h1>
+          <p className="lead">Sentra читает данные через vSphere API, на хосты и в машины ничего ставить не нужно. Подойдёт vCenter или отдельный хост ESXi. Появятся все хосты, виртуальные машины и хранилища, новые машины добавятся сами.</p>
+          <AddTabs current="vmw" />
+        </>
+      )}
 
-      <ol className="steps">
+      <ol className="steps equipment-setup-columns">
         <li>
           <h2>Создайте пользователя только для чтения</h2>
           <p>Sentra нужен отдельный пользователь с ролью Read-only. Так Sentra видит хосты, машины и хранилища, но ничего не может в них изменить.</p>
@@ -208,7 +212,7 @@ export default function AddVMware({ initialTarget = 'vcenter' }) {
         </li>
       </ol>
 
-      <Sources reloadKey={done?.id} />
+      {!inDialog && <Sources reloadKey={done?.id} />}
 
       <details className="help">
         <summary>Если что-то пошло не так</summary>

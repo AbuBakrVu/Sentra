@@ -199,6 +199,32 @@ export default function Internet() {
   )
 }
 
+export function InternetSetup() {
+  const [config, setConfig] = useState(null)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let active = true
+    api.inet().then((data) => { if (active) setConfig(data.config) })
+      .catch((err) => { if (active) setError(err.message) })
+    return () => { active = false }
+  }, [])
+
+  return (
+    <ol className="steps equipment-setup-columns">
+      <li>
+        <h2>Укажите, что проверять</h2>
+        <p>Добавьте адрес офисного роутера и внешние адреса. По ответам роутера Sentra сможет отличить сбой в офисной сети от сбоя у провайдера.</p>
+      </li>
+      <li>
+        <h2>Настройте проверку</h2>
+        {error && <p className="banner critical" role="alert">{error}</p>}
+        {config ? <InetSettings config={config} /> : !error && <p className="muted" role="status">Загружаем настройки…</p>}
+      </li>
+    </ol>
+  )
+}
+
 function InetSettings({ config, onSaved }) {
   const [enabled, setEnabled] = useState(config.enabled)
   const [router, setRouter] = useState(config.router || '')
@@ -215,7 +241,7 @@ function InetSettings({ config, onSaved }) {
       const r = await api.inetSave({ enabled, router, targets })
       setTargets(r.config.targets)
       setMsg({ tone: 'ok', text: enabled ? 'Сохранено. Новая проверка уже идёт, результат появится в течение минуты.' : 'Проверка интернета выключена.' })
-      onSaved(r.config)
+      onSaved?.(r.config)
     } catch (err) { setMsg({ tone: 'critical', text: err.message }) }
     setBusy(false)
   }
