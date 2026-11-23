@@ -253,6 +253,9 @@ func (e *Engine) Eval(h *Host, now time.Time) {
 		// машины больше нет в Proxmox или VMware: всё закрываем
 	case now.Sub(time.Unix(h.LastSeen, 0)) > offlineAfter:
 		t := "Нет данных от агента"
+		if h.Kind == kindSNMP {
+			t = "Нет ответа по SNMP"
+		}
 		if pve {
 			t = "Нет данных от " + virtName(h.Kind)
 			if n := e.machinesOn(h); isVirtNode(h.Kind) && n > 0 {
@@ -286,6 +289,9 @@ func (e *Engine) Eval(h *Host, now time.Time) {
 			if l := e.level(h.ID, ruleMem, v, now, false, open["mem"]); l > 0 {
 				want["mem"] = desired{"degraded", l, ruleMem.title(v), 0}
 			}
+		}
+		if h.Kind == kindSNMP {
+			snmpIfaceProblems(h, want)
 		}
 		if fs, ok := m["fs"].(map[string]any); ok {
 			for mount, raw := range fs {

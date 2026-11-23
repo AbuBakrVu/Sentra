@@ -51,4 +51,8 @@ export const api = {
   vmwAdd: (body) => call('POST', '/api/vmware', body),
   vmwDelete: (id) => call('DELETE', `/api/vmware/${id}`),
   vmwTrust: (id) => call('POST', `/api/vmware/${id}/trust`),
+  snmpList: () => call('GET', '/api/snmp'),
+  snmpAdd: (body) => call('POST', '/api/snmp', body),
+  snmpUpdate: (id, body) => call('PUT', `/api/snmp/${id}`, body),
+  snmpDelete: (id) => call('DELETE', `/api/snmp/${id}`),
 }
