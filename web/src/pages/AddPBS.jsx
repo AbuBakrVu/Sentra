@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api } from '../api.js'
 import { Link } from '../App.jsx'
 import { ago } from '../format.js'
@@ -78,6 +78,8 @@ export default function AddPBS({ inDialog = false }) {
   const [error, setError] = useState('')
   const [done, setDone] = useState(null)
   const [listError, setListError] = useState('')
+  const certificateDetails = useRef(null)
+  const fingerprintInput = useRef(null)
   const set = (field) => (event) => setForm((value) => ({ ...value, [field]: event.target.value }))
 
   useEffect(() => {
@@ -103,6 +105,10 @@ export default function AddPBS({ inDialog = false }) {
       setForm(initial)
     } catch (err) {
       setError(err.message)
+      if (err.code === 'pbs_fingerprint_required') {
+        if (certificateDetails.current) certificateDetails.current.open = true
+        fingerprintInput.current?.focus()
+      }
     } finally {
       setBusy(false)
     }
@@ -112,8 +118,8 @@ export default function AddPBS({ inDialog = false }) {
     <>
       <label>Название в Sentra <input value={form.name} onChange={set('name')} placeholder="По умолчанию — имя datastore" maxLength={100} /></label>
       <label>Предупреждать, если копия старше (ч) <input type="number" value={form.warn_hours} onChange={set('warn_hours')} min={1} max={8760} required /></label>
-      <label>Отпечаток SHA-256 для самоподписанного сертификата <input value={form.fingerprint} onChange={set('fingerprint')} placeholder="AB:CD:…" autoComplete="off" spellCheck={false} /></label>
-      <p className="muted small">Отпечаток можно посмотреть на PBS командой <code>proxmox-backup-manager cert info</code>.</p>
+      <label>Отпечаток SHA-256 сертификата PBS <input ref={fingerprintInput} value={form.fingerprint} onChange={set('fingerprint')} placeholder="AB:CD:…" autoComplete="off" spellCheck={false} aria-describedby="pbs-fingerprint-help" /></label>
+      <p className="muted small" id="pbs-fingerprint-help">Скопируйте отпечаток из <b>Dashboard → Show Fingerprint</b> на PBS или выполните <code>proxmox-backup-manager cert info</code> в консоли PBS.</p>
     </>
   )
 
@@ -139,7 +145,7 @@ export default function AddPBS({ inDialog = false }) {
             <label>ID токена <input value={form.token_id} onChange={set('token_id')} placeholder="sentra@pbs!monitor" required autoComplete="off" /></label>
             <label>Секрет токена <input type="password" value={form.secret} onChange={set('secret')} required autoComplete="new-password" /></label>
             {inDialog ? (
-              <details className="help" onInvalid={(event) => { event.currentTarget.open = true }}>
+              <details className="help" ref={certificateDetails} onInvalid={(event) => { event.currentTarget.open = true }}>
                 <summary>Дополнительные параметры и сертификат</summary>
                 <div className="equipment-optional-fields">{optionalFields}</div>
               </details>

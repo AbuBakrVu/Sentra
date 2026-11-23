@@ -1,7 +1,8 @@
 export class ApiError extends Error {
-  constructor(status, message) {
+  constructor(status, message, code) {
     super(message)
     this.status = status
+    this.code = code
   }
 }
 
@@ -21,7 +22,7 @@ async function call(method, path, body) {
   try { data = await res.json() } catch { /* пустой ответ */ }
   if (!res.ok) {
     if (res.status === 401 && path !== '/api/login') window.dispatchEvent(new Event('sentra:logout'))
-    throw new ApiError(res.status, data?.error || `Ошибка ${res.status}`)
+    throw new ApiError(res.status, data?.error || `Ошибка ${res.status}`, data?.code)
   }
   return data
 }

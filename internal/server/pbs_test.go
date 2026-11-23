@@ -49,17 +49,26 @@ func TestPBSConnectionAndBackupFreshness(t *testing.T) {
 	defer vm.Close()
 	st := testStore(t)
 	s := &Server{st: st, vm: NewVM(vm.URL), eng: NewEngine(st)}
-	add := func(pin string) *httptest.ResponseRecorder {
-		body, _ := json.Marshal(map[string]any{"url": pbs.URL, "datastore": "backup", "namespace": "site/servers",
+	add := func(address, pin string) *httptest.ResponseRecorder {
+		body, _ := json.Marshal(map[string]any{"url": address, "datastore": "backup", "namespace": "site/servers",
 			"token_id": token, "secret": secret, "fingerprint": pin})
 		rec := httptest.NewRecorder()
 		s.addPBS(rec, httptest.NewRequest(http.MethodPost, "/api/pbs", bytes.NewReader(body)), &User{Role: "admin"})
 		return rec
 	}
-	if r := add(strings.Repeat("0", 64)); r.Code != 502 || !strings.Contains(r.Body.String(), "отпечаток") {
+	// The test certificate covers the loopback IP but has no localhost DNS name.
+	// Depending on the platform, verification can report the untrusted issuer first.
+	address := strings.Replace(pbs.URL, "127.0.0.1", "localhost", 1)
+	unverified := add(address, "")
+	var problem map[string]string
+	if err := json.Unmarshal(unverified.Body.Bytes(), &problem); err != nil || unverified.Code != 502 ||
+		problem["code"] != "pbs_fingerprint_required" || !strings.Contains(problem["error"], "SHA-256") {
+		t.Fatalf("unverified certificate: %d %s", unverified.Code, unverified.Body)
+	}
+	if r := add(address, strings.Repeat("0", 64)); r.Code != 502 || !strings.Contains(r.Body.String(), "отпечаток") {
 		t.Fatalf("wrong fingerprint: %d %s", r.Code, r.Body)
 	}
-	r := add(proxmox.Fingerprint(pbs.Certificate()))
+	r := add(address, proxmox.Fingerprint(pbs.Certificate()))
 	if r.Code != 201 {
 		t.Fatalf("add PBS: %d %s", r.Code, r.Body)
 	}

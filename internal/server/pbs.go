@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -229,7 +230,14 @@ func (s *Server) addPBS(w http.ResponseWriter, r *http.Request, u *User) {
 	defer cancel()
 	o, err := p.observe(ctx)
 	if err != nil {
-		httpErr(w, 502, err.Error())
+		if errors.Is(err, proxmox.ErrBackupFingerprintRequired) {
+			writeJSON(w, http.StatusBadGateway, map[string]string{
+				"error": err.Error(),
+				"code":  "pbs_fingerprint_required",
+			})
+		} else {
+			httpErr(w, 502, err.Error())
+		}
 		return
 	}
 	if err := s.st.addPBS(p, o); err != nil {

@@ -19,6 +19,8 @@ import (
 	"time"
 )
 
+var ErrBackupFingerprintRequired = errors.New("укажите SHA-256 отпечаток из PBS")
+
 type BackupClient struct {
 	base string
 	auth string
@@ -102,9 +104,13 @@ func (c *BackupClient) get(ctx context.Context, path string, out any) error {
 	req.Header.Set("Authorization", c.auth)
 	res, err := c.http.Do(req)
 	if err != nil {
+		var hostname x509.HostnameError
+		if errors.As(err, &hostname) {
+			return fmt.Errorf("адрес PBS не указан в сертификате, %w", ErrBackupFingerprintRequired)
+		}
 		var authority x509.UnknownAuthorityError
 		if errors.As(err, &authority) {
-			return errors.New("сертификат PBS не доверен: укажите SHA-256 отпечаток из PBS")
+			return fmt.Errorf("сертификат PBS не доверен, %w", ErrBackupFingerprintRequired)
 		}
 		return fmt.Errorf("запрос к PBS: %w", err)
 	}
