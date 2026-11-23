@@ -12,7 +12,7 @@ import SNMPPorts from './SNMPPorts.jsx'
 
 const rangeList = [['1h', '1 час'], ['6h', '6 часов'], ['24h', 'Сутки'], ['7d', 'Неделя'], ['30d', 'Месяц']]
 
-export default function HostPage({ id }) {
+export default function HostPage({ id, canManage }) {
   const [h, setH] = useState(null)
   const [error, setError] = useState(null)
   const [range, setRange] = useState(() => sessionStorage.getItem('sentra.range') || '1h')
@@ -143,7 +143,7 @@ export default function HostPage({ id }) {
     <>
       <Link to="/" className="back">Все устройства</Link>
       <div className={`host-head tone-${h.status}`}>
-        {editing ? (
+        {canManage && editing ? (
           <form className="rename" onSubmit={saveName}>
             <label className="sr-only" htmlFor="hn">Название</label>
             <input id="hn" value={name} onChange={(e) => setName(e.target.value)} autoFocus maxLength={100} />
@@ -153,7 +153,7 @@ export default function HostPage({ id }) {
         ) : (
           <h1 className="headline host-title">
             {h.name}
-            <button className="link-btn small" onClick={() => { setName(h.name); setEditing(true) }}>Переименовать</button>
+            {canManage && <button className="link-btn small" onClick={() => { setName(h.name); setEditing(true) }}>Переименовать</button>}
           </h1>
         )}
         <p className="lead">
@@ -174,9 +174,9 @@ export default function HostPage({ id }) {
             <span className="maint-on">
               Обслуживание до {new Date(h.maint_until * 1000).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
               {h.maint_comment && <span className="muted"> ({h.maint_comment})</span>}
-              <button className="link-btn" type="button" onClick={() => maint(0)}>Завершить</button>
+              {canManage && <button className="link-btn" type="button" onClick={() => maint(0)}>Завершить</button>}
             </span>
-          ) : maintOpen ? (
+          ) : canManage && (maintOpen ? (
             <span className="maint-form">
               <label className="sr-only" htmlFor="mn">Причина</label>
               <input id="mn" value={maintNote} onChange={(e) => setMaintNote(e.target.value)} placeholder="Причина, например замена диска" maxLength={200} />
@@ -187,7 +187,7 @@ export default function HostPage({ id }) {
             </span>
           ) : (
             <button className="btn small-btn" type="button" onClick={() => setMaintOpen(true)} title="Пока идут работы, новые проблемы не заводятся">Режим обслуживания</button>
-          )}
+          ))}
         </div>
         <AvailabilityBar av={h.availability} />
       </section>
@@ -195,7 +195,7 @@ export default function HostPage({ id }) {
       {history.length > 0 && (
         <section className="host-probs" aria-labelledby="hp-h">
           <h2 id="hp-h">Проблемы за 30 дней</h2>
-          <ProblemRows list={history.slice(0, 10)} showHost={false} onChange={reload} />
+          <ProblemRows list={history.slice(0, 10)} showHost={false} onChange={canManage ? reload : undefined} />
           {history.length > 10 && <p className="muted small"><Link to="/problems">Все проблемы</Link></p>}
         </section>
       )}
@@ -241,12 +241,12 @@ export default function HostPage({ id }) {
         {charts.map(([metric, title]) => <Chart key={metric} hostId={id} metric={metric} range={range} refreshKey={tick} title={title} marks={marksFor(metric, history)} />)}
       </div>
 
-      {(!pve || h.meta?.gone === 1) && (
+      {canManage && (!pve || h.meta?.gone === 1) && (
         <div className="danger">
           <button className="btn danger-btn" onClick={remove}>Удалить из мониторинга</button>
         </div>
       )}
-      {pve && h.meta?.gone !== 1 && (isVMW(h) ? (
+      {canManage && pve && h.meta?.gone !== 1 && (isVMW(h) ? (
         <p className="muted small danger">Хосты и машины VMware появляются и исчезают вместе с vCenter. Отключить всё подключение можно на странице <Link to="/add/vmware">«Подключить VMware»</Link>.</p>
       ) : (
         <p className="muted small danger">Машины Proxmox появляются и исчезают вместе с кластером. Отключить весь Proxmox можно на странице <Link to="/add/proxmox">«Подключить Proxmox»</Link>.</p>

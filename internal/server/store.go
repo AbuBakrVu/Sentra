@@ -226,10 +226,23 @@ func (s *Store) UserCount() (n int) {
 	return
 }
 
+var errLoginTaken = errors.New("этот логин уже занят")
+
 func (s *Store) CreateUser(login, pw, role string) error {
-	_, err := s.db.Exec(`INSERT INTO users(login, pass_hash, role, created_at) VALUES(?,?,?,?)`,
+	result, err := s.db.Exec(`INSERT INTO users(login, pass_hash, role, created_at) VALUES(?,?,?,?)
+		ON CONFLICT(login) DO NOTHING`,
 		login, hashPassword(pw), role, time.Now().Unix())
-	return err
+	if err != nil {
+		return err
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return errLoginTaken
+	}
+	return nil
 }
 
 func (s *Store) SetPassword(id int64, pw string) error {

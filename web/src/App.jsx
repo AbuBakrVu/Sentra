@@ -6,6 +6,7 @@ import HostPage from './pages/HostPage.jsx'
 import AddEquipment from './pages/AddEquipment.jsx'
 import { equipmentSetup } from './pages/EquipmentSetup.jsx'
 import Settings from './pages/Settings.jsx'
+import Users from './pages/Users.jsx'
 import Login from './pages/Login.jsx'
 import Problems from './pages/Problems.jsx'
 import Internet from './pages/Internet.jsx'
@@ -19,12 +20,13 @@ export function navigate(to) {
   window.scrollTo(0, 0)
 }
 
-export function Link({ to, children, ...rest }) {
+export function Link({ to, children, onClick, ...rest }) {
   return (
     <a href={to} {...rest} onClick={(e) => {
       if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return
       e.preventDefault()
       navigate(to)
+      onClick?.(e)
     }}>{children}</a>
   )
 }
@@ -63,18 +65,22 @@ export default function App() {
 
   let page
   const host = path.match(/^\/hosts\/([a-z0-9_-]+)$/)
-  const catalog = path === '/add'
-  if (path === '/internet' || host?.[1] === 'internet') page = <Internet />
-  else if (host) page = <HostPage id={host[1]} />
+  const canManage = user.role === 'admin'
+  const catalog = canManage && path === '/add'
+  if (!canManage && (path === '/users' || path === '/add' || path.startsWith('/add/'))) {
+    page = <p className="banner critical" role="alert">Этот раздел доступен администратору.</p>
+  } else if (path === '/internet' || host?.[1] === 'internet') page = <Internet canManage={canManage} />
+  else if (host) page = <HostPage id={host[1]} canManage={canManage} />
   else if (catalog) page = <AddEquipment />
   else if (path === '/settings') page = <Settings />
-  else if (path === '/problems') page = <Problems />
+  else if (path === '/users') page = <Users />
+  else if (path === '/problems') page = <Problems canManage={canManage} />
   else if (path === '/brief') page = <Brief />
-  else page = equipmentSetup(path) || <Overview />
+  else page = equipmentSetup(path) || <Overview canManage={canManage} />
 
   return (
     <div className="shell">
-      {catalog ? <EquipmentNav /> : <TopNav path={path} user={user} logout={logout} />}
+      {catalog ? <EquipmentNav /> : <TopNav path={path} user={user} logout={logout} canManage={canManage} />}
       <main className={catalog ? 'main equipment-main' : 'main'}>{page}</main>
     </div>
   )
@@ -156,7 +162,7 @@ function EquipmentNav() {
 }
 
 // Верхнее меню: активный раздел подписан, остальные — иконки с подсказкой.
-function TopNav({ path, user, logout }) {
+function TopNav({ path, user, logout, canManage }) {
   const open = useOpenCount()
   const [menu, setMenu] = usePop('.me-user')
   const inet = path === '/internet' || path === '/hosts/internet'
@@ -177,17 +183,18 @@ function TopNav({ path, user, logout }) {
       </nav>
       <div className="tn-right">
         <HostSearch />
-        <AddMenu />
+        {canManage && <AddMenu />}
         <div className="me me-user">
           <button className="avatar" aria-haspopup="menu" aria-expanded={menu} aria-label={`Пользователь ${user.login}`} onClick={() => setMenu((v) => !v)}>
             {user.login.slice(0, 1).toUpperCase()}
           </button>
           {menu && (
             <div className="me-pop" role="menu">
-              <p><b>{user.login}</b><small>Администратор</small></p>
+              <p><b>{user.login}</b><small>{canManage ? 'Администратор' : 'Только просмотр'}</small></p>
               <Link to="/wall" role="menuitem" onClick={() => setMenu(false)}><Icon name="grid" size={18} />Экран на стену</Link>
               <Link to="/brief" role="menuitem" onClick={() => setMenu(false)}><Icon name="check" size={18} />Сводка для директора</Link>
               <Link to="/settings" role="menuitem" onClick={() => setMenu(false)}><Icon name="gear" size={18} />Настройки</Link>
+              {canManage && <Link to="/users" role="menuitem" onClick={() => setMenu(false)}><Icon name="plus" size={18} />Пользователи</Link>}
               <button role="menuitem" onClick={logout}><Icon name="logout" size={18} />Выйти</button>
             </div>
           )}

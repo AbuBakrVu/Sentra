@@ -192,11 +192,7 @@ func (s *Server) listPBS(w http.ResponseWriter, _ *http.Request, _ *User) {
 var backupTokenID = regexp.MustCompile(`^[^@!:\s]+@[^@!:\s]+![^@!:\s]+$`)
 var backupStorePath = regexp.MustCompile(`^[[:alnum:]_][[:alnum:]_.-]*(/[[:alnum:]_][[:alnum:]_.-]*)*$`)
 
-func (s *Server) addPBS(w http.ResponseWriter, r *http.Request, u *User) {
-	if u.Role != "admin" {
-		httpErr(w, 403, "подключение PBS доступно администратору")
-		return
-	}
+func (s *Server) addPBS(w http.ResponseWriter, r *http.Request, _ *User) {
 	var p pbsConfig
 	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&p) != nil {
 		httpErr(w, 400, "неверные параметры PBS")

@@ -33,7 +33,7 @@ function span(sec) {
   return duration(0, sec)
 }
 
-export default function Internet() {
+export default function Internet({ canManage }) {
   const [d, setD] = useState(null)
   const [rep, setRep] = useState(null)
   const [error, setError] = useState(null)
@@ -76,12 +76,12 @@ export default function Internet() {
           {on && h.issues.length > 0 && <span> {h.issues.join(', ')}</span>}
           {on && h.status === 'ok' && <span> Коробка каждые 30 секунд проверяет {d.config.router ? 'роутер и ' : ''}внешние адреса.</span>}
           {on && h.status === 'waiting' && <span> Первая проверка займёт до минуты.</span>}
-          {!on && <span> Включите её в настройках ниже.</span>}
+          {!on && canManage && <span> Включите её в настройках ниже.</span>}
           {on && h.last_seen > 0 && <Fresh at={h.last_seen * 1000} label="Проверено" stale={90} />}
         </p>
       </div>
 
-      {on && !d.config.router && (
+      {canManage && on && !d.config.router && (
         <p className="banner info">Укажите адрес роутера: тогда при сбое будет видно, виноват провайдер или сеть в офисе, и это попадёт в отчёт. <button type="button" className="link-btn" onClick={() => { setSetup(true); setTimeout(() => document.getElementById('inet-setup')?.scrollIntoView({ behavior: 'smooth' }), 50) }}>Открыть настройки</button></p>
       )}
 
@@ -191,10 +191,12 @@ export default function Internet() {
         </section>
       )}
 
-      <details className="help inet-setup" id="inet-setup" open={setup || !on} onToggle={(e) => setSetup(e.currentTarget.open)}>
-        <summary>Настройки проверки</summary>
-        <InetSettings config={d.config} onSaved={(config) => { setD({ ...d, config }); api.inet().then(setD).catch(() => {}) }} />
-      </details>
+      {canManage && (
+        <details className="help inet-setup" id="inet-setup" open={setup || !on} onToggle={(e) => setSetup(e.currentTarget.open)}>
+          <summary>Настройки проверки</summary>
+          <InetSettings config={d.config} onSaved={(config) => { setD({ ...d, config }); api.inet().then(setD).catch(() => {}) }} />
+        </details>
+      )}
     </>
   )
 }

@@ -67,7 +67,7 @@ export function ProblemRows({ list, showHost = true, onChange }) {
                 <td className="wrap" data-label="Что случилось">{p.title}</td>
                 <td className="nowrap" data-label="Началось">{when(p.opened_at)}</td>
                 <td className="nowrap" data-label="Длилось">{duration(p.opened_at, p.closed_at)}{!p.closed_at && <span className="muted"> и идёт</span>}</td>
-                <td data-label="Работа">{p.closed_at
+                <td data-label="Работа">{(p.closed_at || !onChange)
                   ? (p.ack_by ? <span className="muted">{p.ack_by}{p.ack_comment ? `: ${p.ack_comment}` : ''}</span> : <span className="muted">—</span>)
                   : <AckButton p={p} onDone={onChange} />}</td>
               </tr>
@@ -79,7 +79,7 @@ export function ProblemRows({ list, showHost = true, onChange }) {
   )
 }
 
-export default function Problems() {
+export default function Problems({ canManage }) {
   const [tab, setTab] = useState('open')
   const [list, setList] = useState(null)
   const [error, setError] = useState(null)
@@ -113,7 +113,7 @@ export default function Problems() {
       {error && <p className="banner critical">{error}</p>}
       {!list ? <p className="muted">Загружаем…</p>
         : list.length === 0 ? <p className="muted">{tab === 'open' ? 'Открытых проблем нет.' : 'За 30 дней проблем не было.'}</p>
-          : <ProblemRows list={list} onChange={() => setTick((n) => n + 1)} />}
+          : <ProblemRows list={list} onChange={canManage ? () => setTick((n) => n + 1) : undefined} />}
     </>
   )
 }

@@ -94,31 +94,32 @@ func (s *Server) Handler() http.Handler {
 	m.HandleFunc("POST /api/logout", s.logout)
 	m.HandleFunc("GET /api/me", s.auth(s.me))
 	m.HandleFunc("POST /api/password", s.auth(s.changePassword))
+	m.HandleFunc("POST /api/users", s.admin(s.createUser))
 	m.HandleFunc("GET /api/hosts", s.auth(s.listHosts))
 	m.HandleFunc("GET /api/hosts/{id}", s.auth(s.getHost))
-	m.HandleFunc("PATCH /api/hosts/{id}", s.auth(s.renameHost))
-	m.HandleFunc("DELETE /api/hosts/{id}", s.auth(s.deleteHost))
+	m.HandleFunc("PATCH /api/hosts/{id}", s.admin(s.renameHost))
+	m.HandleFunc("DELETE /api/hosts/{id}", s.admin(s.deleteHost))
 	m.HandleFunc("GET /api/hosts/{id}/chart", s.auth(s.chart))
-	m.HandleFunc("POST /api/enroll", s.auth(s.newEnroll))
+	m.HandleFunc("POST /api/enroll", s.admin(s.newEnroll))
 	m.HandleFunc("GET /api/problems", s.auth(s.listProblems))
-	m.HandleFunc("POST /api/problems/{id}/ack", s.auth(s.ackProblem))
-	m.HandleFunc("POST /api/hosts/{id}/maintenance", s.auth(s.setMaintenance))
-	m.HandleFunc("GET /api/pve", s.auth(s.listPVE))
-	m.HandleFunc("POST /api/pve", s.auth(s.addPVE))
-	m.HandleFunc("DELETE /api/pve/{id}", s.auth(s.deletePVE))
-	m.HandleFunc("POST /api/pve/{id}/trust", s.auth(s.trustPVE))
-	m.HandleFunc("GET /api/vmware", s.auth(s.listVMW))
-	m.HandleFunc("POST /api/vmware", s.auth(s.addVMW))
-	m.HandleFunc("DELETE /api/vmware/{id}", s.auth(s.deleteVMW))
-	m.HandleFunc("POST /api/vmware/{id}/trust", s.auth(s.trustVMW))
-	m.HandleFunc("GET /api/snmp", s.auth(s.listSNMP))
-	m.HandleFunc("POST /api/snmp", s.auth(s.addSNMP))
-	m.HandleFunc("PUT /api/snmp/{id}", s.auth(s.updateSNMP))
-	m.HandleFunc("DELETE /api/snmp/{id}", s.auth(s.deleteSNMP))
-	m.HandleFunc("GET /api/pbs", s.auth(s.listPBS))
-	m.HandleFunc("POST /api/pbs", s.auth(s.addPBS))
+	m.HandleFunc("POST /api/problems/{id}/ack", s.admin(s.ackProblem))
+	m.HandleFunc("POST /api/hosts/{id}/maintenance", s.admin(s.setMaintenance))
+	m.HandleFunc("GET /api/pve", s.admin(s.listPVE))
+	m.HandleFunc("POST /api/pve", s.admin(s.addPVE))
+	m.HandleFunc("DELETE /api/pve/{id}", s.admin(s.deletePVE))
+	m.HandleFunc("POST /api/pve/{id}/trust", s.admin(s.trustPVE))
+	m.HandleFunc("GET /api/vmware", s.admin(s.listVMW))
+	m.HandleFunc("POST /api/vmware", s.admin(s.addVMW))
+	m.HandleFunc("DELETE /api/vmware/{id}", s.admin(s.deleteVMW))
+	m.HandleFunc("POST /api/vmware/{id}/trust", s.admin(s.trustVMW))
+	m.HandleFunc("GET /api/snmp", s.admin(s.listSNMP))
+	m.HandleFunc("POST /api/snmp", s.admin(s.addSNMP))
+	m.HandleFunc("PUT /api/snmp/{id}", s.admin(s.updateSNMP))
+	m.HandleFunc("DELETE /api/snmp/{id}", s.admin(s.deleteSNMP))
+	m.HandleFunc("GET /api/pbs", s.admin(s.listPBS))
+	m.HandleFunc("POST /api/pbs", s.admin(s.addPBS))
 	m.HandleFunc("GET /api/inet", s.auth(s.getInet))
-	m.HandleFunc("PUT /api/inet", s.auth(s.putInet))
+	m.HandleFunc("PUT /api/inet", s.admin(s.putInet))
 	m.HandleFunc("GET /api/inet/outages", s.auth(s.inetOutages))
 	m.HandleFunc("GET /api/inet/report.csv", s.auth(s.inetReport))
 	m.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
@@ -200,6 +201,16 @@ func (s *Server) auth(next func(http.ResponseWriter, *http.Request, *User)) http
 	}
 }
 
+func (s *Server) admin(next func(http.ResponseWriter, *http.Request, *User)) http.HandlerFunc {
+	return s.auth(func(w http.ResponseWriter, r *http.Request, u *User) {
+		if u.Role != "admin" {
+			httpErr(w, http.StatusForbidden, "действие доступно администратору")
+			return
+		}
+		next(w, r, u)
+	})
+}
+
 func (s *Server) tooManyFails(ip string) bool {
 	s.loginMu.Lock()
 	defer s.loginMu.Unlock()
@@ -275,7 +286,9 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request, u *User)
 		httpErr(w, 500, err.Error())
 		return
 	}
-	os.Remove(filepath.Join(s.cfg.DataDir, "initial-admin-password.txt"))
+	if u.Login == "admin" && u.Role == "admin" {
+		os.Remove(filepath.Join(s.cfg.DataDir, "initial-admin-password.txt"))
+	}
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
@@ -633,7 +646,7 @@ func (s *Server) renameHost(w http.ResponseWriter, r *http.Request, _ *User) {
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
-func (s *Server) deleteHost(w http.ResponseWriter, r *http.Request, u *User) {
+func (s *Server) deleteHost(w http.ResponseWriter, r *http.Request, _ *User) {
 	if r.PathValue("id") == inetHostID {
 		httpErr(w, 400, "проверка интернета отключается на странице «Интернет»")
 		return
@@ -655,10 +668,6 @@ func (s *Server) deleteHost(w http.ResponseWriter, r *http.Request, u *User) {
 			return
 		}
 		writeJSON(w, 200, map[string]bool{"ok": true})
-		return
-	}
-	if h, err := s.st.Host(r.PathValue("id")); err == nil && h.Kind == kindPBS && u.Role != "admin" {
-		httpErr(w, 403, "отключение PBS доступно администратору")
 		return
 	}
 	if err := s.st.DeleteHost(r.PathValue("id")); err != nil {

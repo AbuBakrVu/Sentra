@@ -559,7 +559,7 @@ export function openProblems(all) {
     .sort((a, b) => b.severity - a.severity || a.opened_at - b.opened_at)
 }
 
-export default function Overview() {
+export default function Overview({ canManage }) {
   const { hosts: all, error, checkedAt } = useHosts()
   // интернет-канал — не устройство: у него своя строка и своя страница
   const hosts = useMemo(() => all?.filter((h) => h.kind !== 'inet') ?? null, [all])
@@ -591,13 +591,15 @@ export default function Overview() {
   if (hosts.length === 0) {
     return (
       <div className="empty">
-        <h1 className="headline">Пока нечего охранять</h1>
-        <p className="lead">Подключите первый сервер: панель выдаст одну команду, её нужно выполнить на сервере. Через минуту здесь появятся его графики. Или подключите Proxmox либо VMware: все узлы, хосты и виртуальные машины появятся сами.</p>
-        <div className="row-btns">
-          <Link to="/add/linux" className="btn primary">Добавить сервер</Link>
-          <Link to="/add/proxmox" className="btn">Подключить Proxmox</Link>
-          <Link to="/add/vmware" className="btn">Подключить VMware</Link>
-        </div>
+        <h1 className="headline">{canManage ? 'Пока нечего охранять' : 'Устройств пока нет'}</h1>
+        {canManage && <>
+          <p className="lead">Подключите первый сервер: панель выдаст одну команду, её нужно выполнить на сервере. Через минуту здесь появятся его графики. Или подключите Proxmox либо VMware: все узлы, хосты и виртуальные машины появятся сами.</p>
+          <div className="row-btns">
+            <Link to="/add/linux" className="btn primary">Добавить сервер</Link>
+            <Link to="/add/proxmox" className="btn">Подключить Proxmox</Link>
+            <Link to="/add/vmware" className="btn">Подключить VMware</Link>
+          </div>
+        </>}
         {inet && <div className="empty-inet"><InetStrip h={inet} /></div>}
       </div>
     )
