@@ -5,6 +5,7 @@ import Overview from './pages/Overview.jsx'
 import HostPage from './pages/HostPage.jsx'
 import AddServer from './pages/AddServer.jsx'
 import AddProxmox from './pages/AddProxmox.jsx'
+import AddVMware from './pages/AddVMware.jsx'
 import Settings from './pages/Settings.jsx'
 import Login from './pages/Login.jsx'
 import Problems from './pages/Problems.jsx'
@@ -67,6 +68,7 @@ export default function App() {
   else if (host) page = <HostPage id={host[1]} />
   else if (path === '/add') page = <AddServer />
   else if (path === '/add/proxmox') page = <AddProxmox />
+  else if (path === '/add/vmware') page = <AddVMware />
   else if (path === '/settings') page = <Settings />
   else if (path === '/problems') page = <Problems />
   else if (path === '/brief') page = <Brief />
@@ -125,6 +127,7 @@ function AddMenu() {
         <div className="me-pop" role="menu">
           <Link to="/add" role="menuitem" onClick={() => setOpen(false)}><Icon name="server" size={18} /><span>Сервер с агентом<small>Linux, одна команда</small></span></Link>
           <Link to="/add/proxmox" role="menuitem" onClick={() => setOpen(false)}><Icon name="layers" size={18} /><span>Proxmox<small>узлы и все машины сразу</small></span></Link>
+          <Link to="/add/vmware" role="menuitem" onClick={() => setOpen(false)}><Icon name="layers" size={18} /><span>VMware<small>vCenter или ESXi, все машины</small></span></Link>
         </div>
       )}
     </div>

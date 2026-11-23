@@ -47,4 +47,8 @@ export const api = {
   pveAdd: (body) => call('POST', '/api/pve', body),
   pveDelete: (id) => call('DELETE', `/api/pve/${id}`),
   pveTrust: (id) => call('POST', `/api/pve/${id}/trust`),
+  vmwList: () => call('GET', '/api/vmware'),
+  vmwAdd: (body) => call('POST', '/api/vmware', body),
+  vmwDelete: (id) => call('DELETE', `/api/vmware/${id}`),
+  vmwTrust: (id) => call('POST', `/api/vmware/${id}/trust`),
 }

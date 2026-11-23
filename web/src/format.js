@@ -56,6 +56,13 @@ export const statusText = {
   maintenance: 'Обслуживание',
 }
 
+// Почему у ВМ VMware не виден диск: состояние VMware Tools (meta.tools).
+export const toolsHint = {
+  notinstalled: 'нужны VMware Tools',
+  notrunning: 'VMware Tools не запущены',
+  ok: 'VMware Tools не сообщили разделы',
+}
+
 // Почему у ВМ Proxmox не виден диск: состояние гостевого агента QEMU (meta.guest_agent).
 export const guestHint = {
   pending: 'проверяем гостевой агент',
