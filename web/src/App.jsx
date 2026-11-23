@@ -4,6 +4,7 @@ import { api } from './api.js'
 import Overview from './pages/Overview.jsx'
 import HostPage from './pages/HostPage.jsx'
 import AddServer from './pages/AddServer.jsx'
+import AddEquipment from './pages/AddEquipment.jsx'
 import AddProxmox from './pages/AddProxmox.jsx'
 import AddPBS from './pages/AddPBS.jsx'
 import AddVMware from './pages/AddVMware.jsx'
@@ -66,13 +67,18 @@ export default function App() {
 
   let page
   const host = path.match(/^\/hosts\/([a-z0-9_-]+)$/)
+  const snmpDevice = path.match(/^\/add\/snmp\/(mikrotik|usergate|nas|other)$/)?.[1]
+  const catalog = path === '/add'
   if (path === '/internet' || host?.[1] === 'internet') page = <Internet />
   else if (host) page = <HostPage id={host[1]} />
-  else if (path === '/add') page = <AddServer />
+  else if (catalog) page = <AddEquipment />
+  else if (path === '/add/linux') page = <AddServer />
   else if (path === '/add/proxmox') page = <AddProxmox />
   else if (path === '/add/pbs') page = <AddPBS />
   else if (path === '/add/vmware') page = <AddVMware />
   else if (path === '/add/snmp') page = <AddSNMP />
+  else if (path === '/add/vmware/esxi') page = <AddVMware key="esxi" initialTarget="esxi" />
+  else if (snmpDevice) page = <AddSNMP key={snmpDevice} initialDevice={snmpDevice} />
   else if (path === '/settings') page = <Settings />
   else if (path === '/problems') page = <Problems />
   else if (path === '/brief') page = <Brief />
@@ -80,8 +86,8 @@ export default function App() {
 
   return (
     <div className="shell">
-      <TopNav path={path} user={user} logout={logout} />
-      <main className="main">{page}</main>
+      {catalog ? <EquipmentNav /> : <TopNav path={path} user={user} logout={logout} />}
+      <main className={catalog ? 'main equipment-main' : 'main'}>{page}</main>
     </div>
   )
 }
@@ -129,7 +135,8 @@ function AddMenu() {
       </button>
       {open && (
         <div className="me-pop" role="menu">
-          <Link to="/add" role="menuitem" onClick={() => setOpen(false)}><Icon name="server" size={18} /><span>Сервер с агентом<small>Linux, одна команда</small></span></Link>
+          <Link to="/add" role="menuitem" onClick={() => setOpen(false)}><Icon name="grid" size={18} /><span>Каталог оборудования</span></Link>
+          <Link to="/add/linux" role="menuitem" onClick={() => setOpen(false)}><Icon name="server" size={18} /><span>Сервер с агентом<small>Linux, одна команда</small></span></Link>
           <Link to="/add/proxmox" role="menuitem" onClick={() => setOpen(false)}><Icon name="layers" size={18} /><span>Proxmox<small>узлы и все машины сразу</small></span></Link>
           <Link to="/add/pbs" role="menuitem" onClick={() => setOpen(false)}><Icon name="server" size={18} /><span>Proxmox Backup Server<small>хранилища и свежесть копий</small></span></Link>
           <Link to="/add/vmware" role="menuitem" onClick={() => setOpen(false)}><Icon name="layers" size={18} /><span>VMware<small>vCenter или ESXi, все машины</small></span></Link>
@@ -137,6 +144,26 @@ function AddMenu() {
         </div>
       )}
     </div>
+  )
+}
+
+function Brand() {
+  return (
+    <Link to="/" className="brand" aria-label="Sentra, обзор">
+      <svg width="22" height="22" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="11" fill="none" stroke="currentColor" strokeWidth="3.5" /><circle cx="16" cy="16" r="4" fill="currentColor" /></svg>
+      Sentra
+    </Link>
+  )
+}
+
+function EquipmentNav() {
+  return (
+    <header className="topnav equipment-nav">
+      <Brand />
+      <button type="button" className="btn primary" onClick={() => document.getElementById('equipment-search')?.focus()}>
+        <Icon name="plus" size={14} />Добавить
+      </button>
+    </header>
   )
 }
 
@@ -148,10 +175,7 @@ function TopNav({ path, user, logout }) {
   const isOn = (to) => (to === '/internet' ? inet : to === '/' ? path === '/' || (path.startsWith('/hosts/') && !inet) : path === to)
   return (
     <header className="topnav">
-      <Link to="/" className="brand" aria-label="Sentra, обзор">
-        <svg width="22" height="22" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="11" fill="none" stroke="currentColor" strokeWidth="3.5" /><circle cx="16" cy="16" r="4" fill="currentColor" /></svg>
-        Sentra
-      </Link>
+      <Brand />
       <nav className="pillnav" aria-label="Разделы">
         {sections.map(([to, icon, label]) => {
           const on = isOn(to)

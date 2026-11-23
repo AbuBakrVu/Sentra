@@ -9,7 +9,8 @@ export function AddTabs({ current }) {
   )
   return (
     <nav className="tabs" aria-label="Что подключить">
-      {tab('/add', 'Сервер с агентом', 'server')}
+      {tab('/add', 'Каталог', 'catalog')}
+      {tab('/add/linux', 'Сервер с агентом', 'server')}
       {tab('/add/proxmox', 'Proxmox', 'pve')}
       {tab('/add/pbs', 'Proxmox Backup', 'pbs')}
       {tab('/add/vmware', 'VMware', 'vmw')}
