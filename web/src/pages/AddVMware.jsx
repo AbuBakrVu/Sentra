@@ -118,12 +118,12 @@ function Sources({ reloadKey }) {
   )
 }
 
-export default function AddVMware() {
-  const [f, setF] = useState({ name: '', url: '', username: 'sentra@vsphere.local', password: '', fingerprint: '' })
+export default function AddVMware({ initialTarget = 'vcenter' }) {
+  const [f, setF] = useState({ name: '', url: '', username: initialTarget === 'esxi' ? 'sentra' : 'sentra@vsphere.local', password: '', fingerprint: '' })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const [done, setDone] = useState(null)
-  const [how, setHow] = useState('vcenter')
+  const [how, setHow] = useState(initialTarget)
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value })
   const pick = (k) => {
     setHow(k)

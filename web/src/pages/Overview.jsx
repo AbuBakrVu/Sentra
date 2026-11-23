@@ -588,7 +588,7 @@ export default function Overview() {
         <h1 className="headline">Пока нечего охранять</h1>
         <p className="lead">Подключите первый сервер: панель выдаст одну команду, её нужно выполнить на сервере. Через минуту здесь появятся его графики. Или подключите Proxmox либо VMware: все узлы, хосты и виртуальные машины появятся сами.</p>
         <div className="row-btns">
-          <Link to="/add" className="btn primary">Добавить сервер</Link>
+          <Link to="/add/linux" className="btn primary">Добавить сервер</Link>
           <Link to="/add/proxmox" className="btn">Подключить Proxmox</Link>
           <Link to="/add/vmware" className="btn">Подключить VMware</Link>
         </div>

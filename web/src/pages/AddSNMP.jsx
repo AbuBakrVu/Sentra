@@ -41,7 +41,7 @@ function OtherSteps() {
     <ul className="howto">
       <li><b>MikroTik:</b> IP › SNMP › Enabled. Для v3: Communities › Add, Security: private, Authentication SHA1, Encryption AES, Addresses: <code>{boxAddr}/32</code>.</li>
       <li><b>Коммутатор или маршрутизатор:</b> включите SNMP-агент, создайте пользователя v3 только на чтение (или community v2c) и разрешите доступ с адреса <code>{boxAddr}</code>.</li>
-      <li><b>Linux-сервер</b> лучше подключить <Link to="/add">агентом Sentra</Link>: он собирает больше и не требует настройки snmpd.</li>
+      <li><b>Linux-сервер</b> лучше подключить <Link to="/add/linux">агентом Sentra</Link>: он собирает больше и не требует настройки snmpd.</li>
     </ul>
   )
 }
@@ -89,13 +89,15 @@ function Devices({ reloadKey, onEdit }) {
 
 const empty = { name: '', addr: '', version: '3', community: '', user: 'sentra', auth_pass: '', priv_pass: '', auth_proto: '', priv_proto: '' }
 
-export default function AddSNMP() {
+const models = { mikrotik: 'MikroTik', usergate: 'UserGate', nas: 'NAS' }
+
+export default function AddSNMP({ initialDevice = 'ideco' }) {
   const [f, setF] = useState(empty)
   const [edit, setEdit] = useState(null) // устройство, которому меняем доступ
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const [done, setDone] = useState(null)
-  const [how, setHow] = useState('ideco')
+  const [how, setHow] = useState(initialDevice === 'ideco' ? 'ideco' : 'other')
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value })
 
   function startEdit(d) {
@@ -128,7 +130,7 @@ export default function AddSNMP() {
   const v3 = f.version === '3'
   return (
     <div className="narrow">
-      <h1 className="headline">Подключить по SNMP</h1>
+      <h1 className="headline">{how === 'other' && models[initialDevice] ? `Подключить ${models[initialDevice]}` : 'Подключить по SNMP'}</h1>
       <p className="lead">Для межсетевых экранов, маршрутизаторов и коммутаторов, куда агент не поставить. Sentra будет следить за процессором, памятью, дисками и каждым интерфейсом: трафик и связь.</p>
       <AddTabs current="snmp" />
 
