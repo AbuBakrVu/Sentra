@@ -12,6 +12,7 @@ export function AddTabs({ current }) {
       {tab('/add', 'Сервер с агентом', 'server')}
       {tab('/add/proxmox', 'Proxmox', 'pve')}
       {tab('/add/vmware', 'VMware', 'vmw')}
+      {tab('/add/snmp', 'SNMP', 'snmp')}
     </nav>
   )
 }

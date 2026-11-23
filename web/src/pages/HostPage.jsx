@@ -58,7 +58,7 @@ export default function HostPage({ id }) {
   }
 
   async function remove() {
-    if (!confirm(`Удалить «${h.name}» из мониторинга? История графиков сохранится в хранилище, но устройство пропадёт из панели.${isPVE(h) ? '' : ' Агент на сервере нужно будет остановить отдельно.'}`)) return
+    if (!confirm(`Удалить «${h.name}» из мониторинга? История графиков сохранится в хранилище, но устройство пропадёт из панели.${isPVE(h) ? '' : h.kind === 'snmp' ? ' Настройки SNMP на самом устройстве останутся, их можно выключить отдельно.' : ' Агент на сервере нужно будет остановить отдельно.'}`)) return
     try { await api.remove(id); navigate('/') } catch (err) { alert(err.message) }
   }
 
@@ -69,7 +69,7 @@ export default function HostPage({ id }) {
   const pve = isPVE(h)
   const kindName = { 'pve-node': 'Узел Proxmox', 'pve-qemu': 'Виртуальная машина (QEMU)', 'pve-lxc': 'Контейнер (LXC)', 'vmw-host': 'Хост ESXi', 'vmw-vm': 'Виртуальная машина VMware' }[h.kind]
   const vmwSrc = meta.source_kind === 'vcenter' ? 'vCenter' : 'ESXi'
-  const facts = isVMW(h) ? [
+  const facts = h.kind === 'snmp' ? snmpFacts(h, m) : isVMW(h) ? [
     ['Тип', kindName],
     ['Подключение', meta.source_name && `${meta.source_name} (${vmwSrc})`],
     meta.cluster ? ['Кластер', meta.cluster] : null,
@@ -111,6 +111,13 @@ export default function HostPage({ id }) {
     'pve-lxc': [['cpu', 'Процессор'], ['mem', 'Память'], ['disk', 'Диск'], ['net', 'Сеть']],
     'vmw-host': [['cpu', 'Процессор'], ['mem', 'Память'], ['disk', 'Заполнение хранилищ']],
     'vmw-vm': [['cpu', 'Процессор'], ['mem', 'Активная память'], ...(m.disk_max_mount ? [['disk', 'Заполнение дисков']] : [])],
+    snmp: [
+      ...(m.cpu_usage_percent != null ? [['cpu', 'Процессор']] : []),
+      ...(m.mem_used_percent != null ? [['mem', 'Память']] : []),
+      ['net', 'Трафик интерфейсов'],
+      ...(m.disk_max_mount ? [['disk', 'Заполнение дисков']] : []),
+      ...(m.load1 != null ? [['load', 'Средняя нагрузка (load average)']] : []),
+    ],
   }[h.kind] || [['cpu', 'Процессор'], ['mem', 'Память'], ['disk', 'Заполнение дисков'], ['net', 'Сеть'], ['load', 'Средняя нагрузка (load average)']]
 
   return (
@@ -202,6 +209,7 @@ export default function HostPage({ id }) {
         </section>
       )}
 
+      {h.kind === 'snmp' && meta.ifaces?.length > 0 && <IfacesTable meta={meta} />}
       {!isNode(h) && m.fs && Object.keys(m.fs).length > 0 && h.status !== 'stopped' && <DisksTable fs={m.fs} />}
 
       {h.kind === 'pve-qemu' && !m.disk_max_mount && h.status !== 'stopped' && <GuestBanner state={h.meta?.guest_agent} />}
@@ -304,6 +312,65 @@ function DisksTable({ fs }) {
           </tbody>
         </table>
       </div>
+    </section>
+  )
+}
+
+function snmpFacts(h, m) {
+  const meta = h.meta || {}
+  return [
+    ['Тип', 'Устройство по SNMP'],
+    ['Производитель', meta.vendor],
+    ['Адрес', meta.addr && `${meta.addr.replace(/:161$/, '')}, SNMP${meta.snmp_version === '3' ? 'v3' : 'v2c'}`],
+    ['Имя в SNMP', meta.sys_name],
+    ['Описание', meta.sys_descr],
+    ['Местоположение', meta.location],
+    ['Память', meta.maxmem ? bytes(meta.maxmem) : null],
+    ['Работает без перезагрузки', m.uptime_seconds != null ? duration(m.uptime_seconds) : null],
+    ['Трафик сейчас', m.net_rx != null ? `приём ${bitrate(m.net_rx)}, передача ${bitrate(m.net_tx)}` : null],
+    ['Данные', h.last_seen ? `по SNMP, ${ago(h.last_seen)}` : null],
+  ].filter(([, v]) => v)
+}
+
+function speedText(bps) {
+  if (!bps) return '—'
+  if (bps >= 1e9) return `${bps / 1e9} Гбит/с`
+  return `${Math.round(bps / 1e6)} Мбит/с`
+}
+
+// Интерфейсы SNMP-устройства. По умолчанию — те, что на связи или были на
+// связи (за ними Sentra следит); пустые порты коммутатора прячем.
+function IfacesTable({ meta }) {
+  const [all, setAll] = useState(false)
+  const watched = new Set(meta.if_watch || [])
+  const ifs = meta.ifaces || []
+  const main = ifs.filter((f) => f.up || watched.has(f.name))
+  const rows = all || main.length === 0 ? ifs : main
+  const state = (f) => (!f.admin_up ? 'выключен' : f.up ? 'на связи' : 'нет связи')
+  return (
+    <section className="storages" aria-labelledby="if-h">
+      <h2 id="if-h">Интерфейсы <span className="muted small">{main.filter((f) => f.up).length} на связи</span></h2>
+      <div className="tbl-box">
+        <table>
+          <thead><tr><th>Интерфейс</th><th>Состояние</th><th className="num">Скорость порта</th><th className="num">Приём</th><th className="num">Передача</th></tr></thead>
+          <tbody>
+            {rows.map((f) => (
+              <tr key={f.name} className={f.admin_up && !f.up && watched.has(f.name) ? 'if-down' : undefined}>
+                <td><b>{f.name}</b>{f.alias && f.alias !== f.name && <span className="muted"> {f.alias}</span>}</td>
+                <td data-label="Состояние">{state(f)}</td>
+                <td className="num" data-label="Скорость порта">{f.up ? speedText(f.speed) : '—'}</td>
+                <td className="num" data-label="Приём">{f.up && f.rx != null ? bitrate(f.rx) : '—'}</td>
+                <td className="num" data-label="Передача">{f.up && f.tx != null ? bitrate(f.tx) : '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {main.length > 0 && main.length < ifs.length && (
+        <button type="button" className="link-btn" onClick={() => setAll(!all)}>
+          {all ? 'Только активные' : `Показать все интерфейсы (${ifs.length})`}
+        </button>
+      )}
     </section>
   )
 }
