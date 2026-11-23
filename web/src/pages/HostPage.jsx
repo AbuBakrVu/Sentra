@@ -59,7 +59,9 @@ export default function HostPage({ id }) {
   }
 
   async function remove() {
-    if (!confirm(`Удалить «${h.name}» из мониторинга? История графиков сохранится в хранилище, но устройство пропадёт из панели.${isPVE(h) ? '' : h.kind === 'snmp' ? ' Настройки SNMP на самом устройстве останутся, их можно выключить отдельно.' : ' Агент на сервере нужно будет остановить отдельно.'}`)) return
+    const detail = h.kind === 'pbs' ? ' Резервные копии в PBS сохранятся.'
+      : isPVE(h) ? '' : h.kind === 'snmp' ? ' Настройки SNMP на самом устройстве останутся, их можно выключить отдельно.' : ' Агент на сервере нужно будет остановить отдельно.'
+    if (!confirm(`Удалить «${h.name}» из мониторинга? История графиков сохранится в хранилище, но устройство пропадёт из панели.${detail}`)) return
     try { await api.remove(id); navigate('/') } catch (err) { alert(err.message) }
   }
 
@@ -68,6 +70,7 @@ export default function HostPage({ id }) {
 
   const inv = h.inventory, m = h.last_metrics || {}, meta = h.meta || {}
   const isSNMP = h.kind === 'snmp'
+  const isPBS = h.kind === 'pbs'
   const rangePicker = (
     <div className="toolbar" role="group" aria-label="Период графиков">
       {rangeList.map(([r, label]) => (
@@ -78,7 +81,14 @@ export default function HostPage({ id }) {
   const pve = isPVE(h)
   const kindName = { 'pve-node': 'Узел Proxmox', 'pve-qemu': 'Виртуальная машина (QEMU)', 'pve-lxc': 'Контейнер (LXC)', 'vmw-host': 'Хост ESXi', 'vmw-vm': 'Виртуальная машина VMware' }[h.kind]
   const vmwSrc = meta.source_kind === 'vcenter' ? 'vCenter' : 'ESXi'
-  const facts = isSNMP ? snmpFacts(h, m) : isVMW(h) ? [
+  const facts = isPBS ? [
+    ['Адрес PBS', meta.url],
+    ['Хранилище', meta.datastore],
+    ['Пространство имён', meta.namespace || 'Корневое'],
+    ['Занято', meta.space_total ? `${bytes(meta.space_used)} из ${bytes(meta.space_total)}` : '—'],
+    ['Свободно', bytes(meta.space_available)],
+    ['Порог свежести', `${meta.warn_hours} ч`],
+  ] : isSNMP ? snmpFacts(h, m) : isVMW(h) ? [
     ['Тип', kindName],
     ['Подключение', meta.source_name && `${meta.source_name} (${vmwSrc})`],
     meta.cluster ? ['Кластер', meta.cluster] : null,
@@ -115,6 +125,7 @@ export default function HostPage({ id }) {
   ].filter(([, v]) => v)
 
   const charts = {
+    pbs: meta.space_total ? [['disk', 'Заполнение хранилища']] : [],
     'pve-node': [['cpu', 'Процессор'], ['mem', 'Память'], ['disk', 'Заполнение хранилищ'], ['load', 'Средняя нагрузка (load average)']],
     'pve-qemu': [['cpu', 'Процессор'], ['mem', 'Память'], ['net', 'Сеть'], ...(m.disk_max_mount ? [['disk', 'Диск']] : [])],
     'pve-lxc': [['cpu', 'Процессор'], ['mem', 'Память'], ['disk', 'Диск'], ['net', 'Сеть']],
@@ -193,7 +204,8 @@ export default function HostPage({ id }) {
         {facts.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}
       </dl>
 
-      {!isSNMP && rangePicker}
+      {isPBS && <BackupGroups meta={meta} seen={h.last_seen} />}
+      {!isSNMP && charts.length > 0 && rangePicker}
 
       {isNode(h) && meta.storages?.length > 0 && (
         <section className="storages" aria-labelledby="st-h">
@@ -217,7 +229,7 @@ export default function HostPage({ id }) {
         </section>
       )}
 
-      {!isNode(h) && m.fs && Object.keys(m.fs).length > 0 && h.status !== 'stopped' && <DisksTable fs={m.fs} />}
+      {!isPBS && !isNode(h) && m.fs && Object.keys(m.fs).length > 0 && h.status !== 'stopped' && <DisksTable fs={m.fs} />}
 
       {h.kind === 'pve-qemu' && !m.disk_max_mount && h.status !== 'stopped' && <GuestBanner state={h.meta?.guest_agent} />}
       {h.kind === 'vmw-vm' && !m.disk_max_mount && h.status === 'ok' && <ToolsBanner state={h.meta?.tools} />}
@@ -319,6 +331,36 @@ function DisksTable({ fs }) {
           </tbody>
         </table>
       </div>
+    </section>
+  )
+}
+
+function BackupGroups({ meta, seen }) {
+  const groups = meta.backup_groups || []
+  const cutoff = seen - meta.warn_hours * 3600
+  return (
+    <section className="storages" aria-labelledby="pbs-groups">
+      <h2 id="pbs-groups">Группы резервных копий</h2>
+      {groups.length === 0 ? <p className="muted">В этом пространстве имён PBS не вернул ни одной группы.</p> : (
+        <div className="tbl-box">
+          <table>
+            <thead><tr><th>Группа</th><th>Последняя копия</th><th className="num">Копий</th><th>Состояние</th></tr></thead>
+            <tbody>
+              {groups.map((g) => {
+                const stale = !g.latest || g.latest < cutoff
+                return (
+                  <tr key={g.name} className={stale ? 'row-warning' : undefined}>
+                    <td><b>{g.name}</b></td>
+                    <td data-label="Последняя копия">{g.latest ? new Date(g.latest * 1000).toLocaleString('ru-RU') : '—'}</td>
+                    <td className="num" data-label="Копий">{g.copies}</td>
+                    <td data-label="Состояние"><span className={`badge s-${stale ? 'warning' : 'ok'}`}>{!g.latest ? 'Нет завершённой копии' : stale ? 'Копия устарела' : 'Свежая'}</span></td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </section>
   )
 }

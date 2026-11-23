@@ -93,6 +93,18 @@ CREATE TABLE IF NOT EXISTS snmp_devices (
   last_error TEXT NOT NULL DEFAULT '',
   created_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS pbs_sources (
+  id TEXT PRIMARY KEY REFERENCES hosts(id) ON DELETE CASCADE,
+  url TEXT NOT NULL,
+  datastore TEXT NOT NULL,
+  namespace TEXT NOT NULL,
+  token_id TEXT NOT NULL,
+  secret TEXT NOT NULL,
+  fingerprint TEXT NOT NULL,
+  warn_hours INTEGER NOT NULL,
+  last_error TEXT NOT NULL DEFAULT '',
+  UNIQUE(url, datastore, namespace)
+);
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL

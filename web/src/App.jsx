@@ -5,6 +5,7 @@ import Overview from './pages/Overview.jsx'
 import HostPage from './pages/HostPage.jsx'
 import AddServer from './pages/AddServer.jsx'
 import AddProxmox from './pages/AddProxmox.jsx'
+import AddPBS from './pages/AddPBS.jsx'
 import AddVMware from './pages/AddVMware.jsx'
 import AddSNMP from './pages/AddSNMP.jsx'
 import Settings from './pages/Settings.jsx'
@@ -69,6 +70,7 @@ export default function App() {
   else if (host) page = <HostPage id={host[1]} />
   else if (path === '/add') page = <AddServer />
   else if (path === '/add/proxmox') page = <AddProxmox />
+  else if (path === '/add/pbs') page = <AddPBS />
   else if (path === '/add/vmware') page = <AddVMware />
   else if (path === '/add/snmp') page = <AddSNMP />
   else if (path === '/settings') page = <Settings />
@@ -129,6 +131,7 @@ function AddMenu() {
         <div className="me-pop" role="menu">
           <Link to="/add" role="menuitem" onClick={() => setOpen(false)}><Icon name="server" size={18} /><span>Сервер с агентом<small>Linux, одна команда</small></span></Link>
           <Link to="/add/proxmox" role="menuitem" onClick={() => setOpen(false)}><Icon name="layers" size={18} /><span>Proxmox<small>узлы и все машины сразу</small></span></Link>
+          <Link to="/add/pbs" role="menuitem" onClick={() => setOpen(false)}><Icon name="server" size={18} /><span>Proxmox Backup Server<small>хранилища и свежесть копий</small></span></Link>
           <Link to="/add/vmware" role="menuitem" onClick={() => setOpen(false)}><Icon name="layers" size={18} /><span>VMware<small>vCenter или ESXi, все машины</small></span></Link>
           <Link to="/add/snmp" role="menuitem" onClick={() => setOpen(false)}><Icon name="network" size={18} /><span>По SNMP<small>межсетевой экран, коммутатор, роутер</small></span></Link>
         </div>
