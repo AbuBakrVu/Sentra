@@ -625,3 +625,9 @@ body.col-dragging { cursor: col-resize; user-select: none; }
 
 .row-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .if-down td:first-child b { color: var(--critical, #b3261e); }
+.port-name { display: grid; justify-items: start; gap: 3px; }
+.port-name .link-btn[aria-pressed="true"] { color: var(--ink); }
+.other-ports { margin-top: 12px; }
+.other-ports summary { cursor: pointer; padding: 4px 0; }
+.other-ports[open] summary { margin-bottom: 8px; }
+.port-traffic { margin-top: 16px; }

@@ -8,6 +8,7 @@ import AvailabilityBar from '../Availability.jsx'
 import { ProblemRows } from './Problems.jsx'
 import Fresh from '../Fresh.jsx'
 import { marksFor } from '../marks.js'
+import SNMPPorts from './SNMPPorts.jsx'
 
 const rangeList = [['1h', '1 час'], ['6h', '6 часов'], ['24h', 'Сутки'], ['7d', 'Неделя'], ['30d', 'Месяц']]
 
@@ -66,10 +67,18 @@ export default function HostPage({ id }) {
   if (!h) return <p className="muted">Загружаем…</p>
 
   const inv = h.inventory, m = h.last_metrics || {}, meta = h.meta || {}
+  const isSNMP = h.kind === 'snmp'
+  const rangePicker = (
+    <div className="toolbar" role="group" aria-label="Период графиков">
+      {rangeList.map(([r, label]) => (
+        <button key={r} className={range === r ? 'seg active' : 'seg'} aria-pressed={range === r} onClick={() => pickRange(r)}>{label}</button>
+      ))}
+    </div>
+  )
   const pve = isPVE(h)
   const kindName = { 'pve-node': 'Узел Proxmox', 'pve-qemu': 'Виртуальная машина (QEMU)', 'pve-lxc': 'Контейнер (LXC)', 'vmw-host': 'Хост ESXi', 'vmw-vm': 'Виртуальная машина VMware' }[h.kind]
   const vmwSrc = meta.source_kind === 'vcenter' ? 'vCenter' : 'ESXi'
-  const facts = h.kind === 'snmp' ? snmpFacts(h, m) : isVMW(h) ? [
+  const facts = isSNMP ? snmpFacts(h, m) : isVMW(h) ? [
     ['Тип', kindName],
     ['Подключение', meta.source_name && `${meta.source_name} (${vmwSrc})`],
     meta.cluster ? ['Кластер', meta.cluster] : null,
@@ -114,7 +123,6 @@ export default function HostPage({ id }) {
     snmp: [
       ...(m.cpu_usage_percent != null ? [['cpu', 'Процессор']] : []),
       ...(m.mem_used_percent != null ? [['mem', 'Память']] : []),
-      ['net', 'Трафик интерфейсов'],
       ...(m.disk_max_mount ? [['disk', 'Заполнение дисков']] : []),
       ...(m.load1 != null ? [['load', 'Средняя нагрузка (load average)']] : []),
     ],
@@ -143,6 +151,10 @@ export default function HostPage({ id }) {
           {h.last_seen > 0 && <Fresh at={h.last_seen * 1000} label="Данные получены" stale={180} />}
         </p>
       </div>
+
+      {isSNMP && (
+        <SNMPPorts key={id} id={id} meta={meta} range={range} tick={tick} history={history}>{rangePicker}</SNMPPorts>
+      )}
 
       <section className="host-av" aria-labelledby="av-h">
         <div className="host-av-head">
@@ -181,11 +193,7 @@ export default function HostPage({ id }) {
         {facts.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}
       </dl>
 
-      <div className="toolbar" role="group" aria-label="Период графиков">
-        {rangeList.map(([r, label]) => (
-          <button key={r} className={range === r ? 'seg active' : 'seg'} onClick={() => pickRange(r)}>{label}</button>
-        ))}
-      </div>
+      {!isSNMP && rangePicker}
 
       {isNode(h) && meta.storages?.length > 0 && (
         <section className="storages" aria-labelledby="st-h">
@@ -209,7 +217,6 @@ export default function HostPage({ id }) {
         </section>
       )}
 
-      {h.kind === 'snmp' && meta.ifaces?.length > 0 && <IfacesTable meta={meta} />}
       {!isNode(h) && m.fs && Object.keys(m.fs).length > 0 && h.status !== 'stopped' && <DisksTable fs={m.fs} />}
 
       {h.kind === 'pve-qemu' && !m.disk_max_mount && h.status !== 'stopped' && <GuestBanner state={h.meta?.guest_agent} />}
@@ -327,50 +334,6 @@ function snmpFacts(h, m) {
     ['Местоположение', meta.location],
     ['Память', meta.maxmem ? bytes(meta.maxmem) : null],
     ['Работает без перезагрузки', m.uptime_seconds != null ? duration(m.uptime_seconds) : null],
-    ['Трафик сейчас', m.net_rx != null ? `приём ${bitrate(m.net_rx)}, передача ${bitrate(m.net_tx)}` : null],
     ['Данные', h.last_seen ? `по SNMP, ${ago(h.last_seen)}` : null],
   ].filter(([, v]) => v)
-}
-
-function speedText(bps) {
-  if (!bps) return '—'
-  if (bps >= 1e9) return `${bps / 1e9} Гбит/с`
-  return `${Math.round(bps / 1e6)} Мбит/с`
-}
-
-// Интерфейсы SNMP-устройства. По умолчанию — те, что на связи или были на
-// связи (за ними Sentra следит); пустые порты коммутатора прячем.
-function IfacesTable({ meta }) {
-  const [all, setAll] = useState(false)
-  const watched = new Set(meta.if_watch || [])
-  const ifs = meta.ifaces || []
-  const main = ifs.filter((f) => f.up || watched.has(f.name))
-  const rows = all || main.length === 0 ? ifs : main
-  const state = (f) => (!f.admin_up ? 'выключен' : f.up ? 'на связи' : 'нет связи')
-  return (
-    <section className="storages" aria-labelledby="if-h">
-      <h2 id="if-h">Интерфейсы <span className="muted small">{main.filter((f) => f.up).length} на связи</span></h2>
-      <div className="tbl-box">
-        <table>
-          <thead><tr><th>Интерфейс</th><th>Состояние</th><th className="num">Скорость порта</th><th className="num">Приём</th><th className="num">Передача</th></tr></thead>
-          <tbody>
-            {rows.map((f) => (
-              <tr key={f.name} className={f.admin_up && !f.up && watched.has(f.name) ? 'if-down' : undefined}>
-                <td><b>{f.name}</b>{f.alias && f.alias !== f.name && <span className="muted"> {f.alias}</span>}</td>
-                <td data-label="Состояние">{state(f)}</td>
-                <td className="num" data-label="Скорость порта">{f.up ? speedText(f.speed) : '—'}</td>
-                <td className="num" data-label="Приём">{f.up && f.rx != null ? bitrate(f.rx) : '—'}</td>
-                <td className="num" data-label="Передача">{f.up && f.tx != null ? bitrate(f.tx) : '—'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {main.length > 0 && main.length < ifs.length && (
-        <button type="button" className="link-btn" onClick={() => setAll(!all)}>
-          {all ? 'Только активные' : `Показать все интерфейсы (${ifs.length})`}
-        </button>
-      )}
-    </section>
-  )
 }

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"sort"
@@ -20,9 +21,10 @@ import (
 const kindSNMP = "snmp"
 
 type snmpPrev struct {
-	at  time.Time
-	cpu *snmp.CPURaw
-	ifs map[int][2]uint64 // индекс → байты приём, передача
+	at     time.Time
+	cpu    *snmp.CPURaw
+	uptime float64
+	ifs    map[int]snmp.Iface
 }
 
 type snmpPoller struct {
@@ -129,11 +131,11 @@ func (s *Server) collectSNMP(ctx context.Context, d *SNMPDevice) error {
 
 	s.snmp.mu.Lock()
 	prev := s.snmp.prev[d.ID]
-	cur := &snmpPrev{at: now, cpu: snap.CPURaw, ifs: map[int][2]uint64{}}
+	cur := &snmpPrev{at: now, cpu: snap.CPURaw, uptime: snap.Uptime, ifs: map[int]snmp.Iface{}}
 	s.snmp.prev[d.ID] = cur
 	s.snmp.mu.Unlock()
 	dt := 0.0
-	if prev != nil {
+	if prev != nil && (snap.Uptime == 0 || snap.Uptime >= prev.uptime) {
 		dt = now.Sub(prev.at).Seconds()
 	}
 
@@ -178,26 +180,35 @@ func (s *Server) collectSNMP(ctx context.Context, d *SNMPDevice) error {
 			}
 		}
 	}
-	var ifaces []map[string]any
+	nameCounts := make(map[string]int, len(snap.Ifaces))
 	for _, f := range snap.Ifaces {
-		cur.ifs[f.Index] = [2]uint64{f.In, f.Out}
-		item := map[string]any{"name": f.Name, "alias": f.Alias, "up": f.Up, "admin_up": f.AdminUp, "speed": f.Speed}
-		if f.Up && f.AdminUp {
+		nameCounts[f.Name]++
+	}
+	ifaces := make([]map[string]any, 0, len(snap.Ifaces))
+	for _, f := range snap.Ifaces {
+		cur.ifs[f.Index] = f
+		up, adminUp := f.OperStatus == 1, f.AdminStatus == 1
+		item := map[string]any{
+			"index": f.Index, "name": f.Name, "alias": f.Alias, "mac": f.MAC, "physical": f.Physical,
+			"up": up, "admin_up": adminUp, "oper_status": f.OperStatus, "admin_status": f.AdminStatus, "speed": f.Speed,
+		}
+		label := f.Name
+		if nameCounts[label] > 1 {
+			label = fmt.Sprintf("%s (#%d)", f.Name, f.Index)
+			item["traffic_label"] = label
+		}
+		if up && adminUp {
 			watched[f.Name] = true
 		}
-		if !f.AdminUp {
+		if f.AdminStatus == 2 {
 			delete(watched, f.Name) // порт выключили намеренно — больше не следим
 		}
-		if prev != nil && dt > 0 {
-			if p, ok := prev.ifs[f.Index]; ok && f.In >= p[0] && f.Out >= p[1] {
-				rx, tx := float64(f.In-p[0])/dt, float64(f.Out-p[1])/dt
-				// 32-битные счётчики на гигабите переполняются за ~34 с: такие скачки отбрасываем
-				if f.HC || (rx < 1.25e8 && tx < 1.25e8) {
-					item["rx"], item["tx"] = round2(rx), round2(tx)
-					if f.Up {
-						add(proto.MNetRx, round2(rx), "iface", f.Name)
-						add(proto.MNetTx, round2(tx), "iface", f.Name)
-					}
+		if dt > 0 {
+			if rx, tx, ok := snmpIfaceRates(prev.ifs[f.Index], f, dt); ok {
+				item["rx"], item["tx"] = rx, tx
+				if up || f.Physical {
+					add(proto.MNetRx, rx, "iface", label)
+					add(proto.MNetTx, tx, "iface", label)
 				}
 			}
 		}
@@ -237,6 +248,27 @@ func (s *Server) collectSNMP(ctx context.Context, d *SNMPDevice) error {
 	}
 	s.st.SNMPResult(d.ID, true, "")
 	return nil
+}
+
+func snmpIfaceRates(prev, cur snmp.Iface, dt float64) (rx, tx float64, ok bool) {
+	if !prev.Counters || !cur.Counters || prev.HC != cur.HC || prev.Discontinuity != cur.Discontinuity ||
+		prev.Name != cur.Name || prev.MAC != cur.MAC {
+		return 0, 0, false
+	}
+	const wrap = 1 << 32
+	limit := max(prev.Speed, cur.Speed) / 8 * dt
+	delta := func(a, b uint64) (uint64, bool) {
+		if b >= a {
+			return b - a, true
+		}
+		if !cur.HC && limit > 0 && limit < wrap && float64(wrap-a+b) <= limit {
+			return wrap - a + b, true
+		}
+		return 0, false
+	}
+	in, inOK := delta(prev.In, cur.In)
+	out, outOK := delta(prev.Out, cur.Out)
+	return round2(float64(in) / dt), round2(float64(out) / dt), inOK && outOK
 }
 
 // ---------- API ----------

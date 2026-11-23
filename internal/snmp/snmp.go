@@ -192,6 +192,7 @@ const (
 
 	oidIfTable  = ".1.3.6.1.2.1.2.2.1"
 	oidIfXTable = ".1.3.6.1.2.1.31.1.1.1"
+	oidIfStack  = ".1.3.6.1.2.1.31.1.2.1.3" // ifStackStatus.higher.lower
 )
 
 func get(g *gosnmp.GoSNMP, oids ...string) (map[string]gosnmp.SnmpPDU, error) {
@@ -218,6 +219,8 @@ func get(g *gosnmp.GoSNMP, oids ...string) (map[string]gosnmp.SnmpPDU, error) {
 
 func str(v gosnmp.SnmpPDU) string {
 	switch x := v.Value.(type) {
+	case nil:
+		return ""
 	case []byte:
 		return strings.TrimRight(strings.ToValidUTF8(string(x), "?"), "\x00")
 	case string:
@@ -326,14 +329,15 @@ type Disk struct {
 }
 
 type Iface struct {
-	Index       int
-	Name, Alias string
-	Type        int
-	Up          bool    // ifOperStatus == up
-	AdminUp     bool    // ifAdminStatus == up
-	Speed       float64 // бит/с
-	In, Out     uint64  // счётчики байт
-	HC          bool    // 64-битные счётчики
+	Index            int
+	Name, Alias, MAC string
+	Physical         bool
+	OperStatus       int     // ifOperStatus
+	AdminStatus      int     // ifAdminStatus
+	Speed            float64 // бит/с
+	In, Out          uint64  // счётчики байт
+	Counters, HC     bool    // есть оба счётчика; 64-битные
+	Discontinuity    uint32  // ifCounterDiscontinuityTime
 }
 
 // CPURaw — суммы счётчиков ssCpuRaw* для расчёта загрузки по разнице.
@@ -473,33 +477,13 @@ func Poll(ctx context.Context, addr string, a Auth) (*Snapshot, error) {
 		return nil, err
 	}
 	xs, _ := walk(g, oidIfXTable) // ifXTable есть не у всех
-	it, xt := table(ifs, oidIfTable), table(xs, oidIfXTable)
-	for idxS, d := range it[2] { // ifDescr
-		idx, _ := strconv.Atoi(idxS)
-		f := Iface{Index: idx, Name: str(d), Type: int(num(it[3][idxS])),
-			Up: num(it[8][idxS]) == 1, AdminUp: num(it[7][idxS]) == 1,
-			Speed: num(it[5][idxS]),
-			In:    uint64(num(it[10][idxS])), Out: uint64(num(it[16][idxS]))}
-		if n, ok := xt[1][idxS]; ok && str(n) != "" {
-			f.Name = str(n)
-		}
-		if al, ok := xt[18][idxS]; ok {
-			f.Alias = str(al)
-		}
-		if hs, ok := xt[15][idxS]; ok && num(hs) > 0 {
-			f.Speed = num(hs) * 1e6 // ifHighSpeed в Мбит/с
-		}
-		if in, ok := xt[6][idxS]; ok {
-			if out, ok := xt[10][idxS]; ok {
-				f.In, f.Out, f.HC = gosnmp.ToBigInt(in.Value).Uint64(), gosnmp.ToBigInt(out.Value).Uint64(), true
-			}
-		}
-		if f.Type == 24 { // softwareLoopback
-			continue
-		}
-		s.Ifaces = append(s.Ifaces, f)
+	// Опциональная таблица слоёв. Отсутствие ответа не должно задерживать опрос.
+	var stack []gosnmp.SnmpPDU
+	if len(xs) > 0 {
+		g.Timeout, g.Retries = time.Second, 0
+		stack, _ = walk(g, oidIfStack)
 	}
-	sort.Slice(s.Ifaces, func(i, j int) bool { return s.Ifaces[i].Index < s.Ifaces[j].Index })
+	s.Ifaces = readIfaces(ifs, xs, stack)
 	return s, nil
 }
 

@@ -693,7 +693,8 @@ func fixed(s string) func(map[string]string) string {
 
 func (s *Server) chart(w http.ResponseWriter, r *http.Request, _ *User) {
 	id := r.PathValue("id")
-	if _, err := s.st.Host(id); err != nil {
+	h, err := s.st.Host(id)
+	if err != nil {
 		httpErr(w, 404, "хост не найден")
 		return
 	}
@@ -702,6 +703,7 @@ func (s *Server) chart(w http.ResponseWriter, r *http.Request, _ *User) {
 		rg = ranges["1h"]
 	}
 	var qs []chartQuery
+	selector := fmt.Sprintf("host=%q", id)
 	unit := "%"
 	switch r.URL.Query().Get("m") {
 	case "cpu":
@@ -725,6 +727,10 @@ func (s *Server) chart(w http.ResponseWriter, r *http.Request, _ *User) {
 			{proto.MNetRx, func(l map[string]string) string { return strings.TrimSpace(l["iface"] + " приём") }},
 			{proto.MNetTx, func(l map[string]string) string { return strings.TrimSpace(l["iface"] + " передача") }},
 		}
+		if iface := r.URL.Query().Get("iface"); iface != "" && h.Kind == kindSNMP {
+			selector += fmt.Sprintf(",iface=%q", iface)
+			qs = []chartQuery{{proto.MNetRx, fixed("Приём")}, {proto.MNetTx, fixed("Передача")}}
+		}
 	case "inet_rtt":
 		unit = "ms"
 		qs = []chartQuery{{mInetRTT, func(l map[string]string) string { return l["target"] }}}
@@ -740,7 +746,7 @@ func (s *Server) chart(w http.ResponseWriter, r *http.Request, _ *User) {
 	defer cancel()
 	var out *Chart
 	for _, q := range qs {
-		expr := fmt.Sprintf(`avg_over_time(%s%s{host=%q}[%ds])`, metricPrefix, q.metric, id, int(math.Max(rg.step.Seconds(), 60)))
+		expr := fmt.Sprintf(`avg_over_time(%s%s{%s}[%ds])`, metricPrefix, q.metric, selector, int(math.Max(rg.step.Seconds(), 60)))
 		ch, err := s.vm.QueryRange(ctx, expr, start, end, rg.step, q.legend)
 		if err != nil {
 			httpErr(w, 502, err.Error())
