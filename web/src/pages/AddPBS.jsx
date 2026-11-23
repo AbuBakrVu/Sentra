@@ -12,11 +12,28 @@ function TokenInstructions({ datastore }) {
   const validName = /^[A-Za-z0-9_][A-Za-z0-9_.-]*$/.test(name)
   const path = `/datastore/${validName ? name : 'backup'}`
   const commands = [
-    'proxmox-backup-manager user create sentra@pbs --comment "Sentra monitoring"',
-    'proxmox-backup-manager user generate-token sentra@pbs monitor',
-    `proxmox-backup-manager acl update '${path}' DatastoreAudit --auth-id sentra@pbs --propagate true`,
-    `proxmox-backup-manager acl update '${path}' DatastoreAudit --auth-id 'sentra@pbs!monitor' --propagate true`,
-  ].join('\n')
+    {
+      command: 'proxmox-backup-manager user create sentra@pbs --comment "Sentra monitoring"',
+      what: <>Создаёт пользователя <code>sentra</code> во встроенной базе PBS (<code>@pbs</code>). Параметр <code>--comment</code> добавляет описание к учётной записи.</>,
+      why: 'Для мониторинга нужна отдельная учётная запись. Её можно узнать по описанию и отключить, когда мониторинг больше не нужен.',
+    },
+    {
+      command: 'proxmox-backup-manager user generate-token sentra@pbs monitor',
+      what: <>Создаёт токен <code>monitor</code> для пользователя <code>sentra@pbs</code>. В выводе <code>tokenid</code> содержит ID токена, а <code>value</code> содержит секрет. Вставьте оба значения в форму Sentra.</>,
+      why: 'Sentra подключается по этому токену. При необходимости токен можно отозвать отдельно от учётной записи.',
+    },
+    {
+      command: `proxmox-backup-manager acl update '${path}' DatastoreAudit --auth-id sentra@pbs --propagate true`,
+      what: <>Выдаёт пользователю <code>sentra@pbs</code> роль <code>DatastoreAudit</code> на пути <code>{path}</code>. Флаг <code>--propagate true</code> распространяет права на пространства имён внутри хранилища.</>,
+      why: 'PBS ограничивает права токена правами его владельца. Пользователю тоже нужен доступ к метрикам хранилища и списку резервных копий.',
+    },
+    {
+      command: `proxmox-backup-manager acl update '${path}' DatastoreAudit --auth-id 'sentra@pbs!monitor' --propagate true`,
+      what: <>Выдаёт эту же роль самому токену. После <code>--auth-id</code> указывается полный ID <code>sentra@pbs!monitor</code> в одинарных кавычках, чтобы оболочка передала символ <code>!</code> как часть ID.</>,
+      why: 'У нового токена пустой список прав. Эта команда даёт Sentra доступ на просмотр выбранного хранилища.',
+    },
+  ]
+  const commandBlock = commands.map(({ command }) => command).join('\n')
 
   return (
     <>
@@ -36,8 +53,16 @@ function TokenInstructions({ datastore }) {
       ) : (
         <>
           <p>Откройте консоль самого сервера PBS и выполните команды от <code>root</code>.</p>
-          <CopyBlock key={commands} text={commands} />
-          <p>Команда <code>generate-token</code> выводит <code>tokenid</code> и <code>value</code>. В форму Sentra вставьте их как ID и секрет токена.</p>
+          <CopyBlock key={commandBlock} text={commandBlock} />
+          <ol className="howto cmds">
+            {commands.map(({ command, what, why }) => (
+              <li key={command}>
+                <code className="cmd-line">{command}</code>
+                <p>{what}</p>
+                <p className="why">Зачем: {why}</p>
+              </li>
+            ))}
+          </ol>
           <p>Если пользователь уже есть, пропустите его создание. Если уже есть токен, используйте его ID и сохранённый секрет.</p>
         </>
       )}
