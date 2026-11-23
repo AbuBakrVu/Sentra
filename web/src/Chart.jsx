@@ -17,7 +17,7 @@ function fmt(unit, v) {
 
 const tint = { warning: '168, 111, 0', critical: '194, 57, 47' }
 
-export default function Chart({ hostId, metric, range, title, refreshKey, marks }) {
+export default function Chart({ hostId, metric, range, title, refreshKey, marks, iface }) {
   const box = useRef(null)
   const plot = useRef(null)
   const mk = useRef(marks)
@@ -27,7 +27,7 @@ export default function Chart({ hostId, metric, range, title, refreshKey, marks 
 
   useEffect(() => {
     let alive = true
-    api.chart(hostId, metric, range).then((d) => {
+    api.chart(hostId, metric, range, iface).then((d) => {
       if (!alive) return
       plot.current?.destroy()
       plot.current = null
@@ -103,7 +103,7 @@ export default function Chart({ hostId, metric, range, title, refreshKey, marks 
       plot.current = new uPlot(opts, [d.timestamps, ...d.series.map((s) => s.values)], box.current)
     }).catch((e) => alive && setState({ loading: false, error: e.message, empty: false, t0: 0, t1: 0 }))
     return () => { alive = false }
-  }, [hostId, metric, range, refreshKey])
+  }, [hostId, metric, range, refreshKey, iface])
 
   useEffect(() => {
     if (!box.current) return

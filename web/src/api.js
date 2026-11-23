@@ -35,7 +35,7 @@ export const api = {
   host: (id) => call('GET', `/api/hosts/${id}`),
   rename: (id, name) => call('PATCH', `/api/hosts/${id}`, { name }),
   remove: (id) => call('DELETE', `/api/hosts/${id}`),
-  chart: (id, m, range) => call('GET', `/api/hosts/${id}/chart?m=${m}&range=${range}`),
+  chart: (id, m, range, iface) => call('GET', `/api/hosts/${id}/chart?m=${m}&range=${range}${iface ? `&iface=${encodeURIComponent(iface)}` : ''}`),
   enroll: () => call('POST', '/api/enroll'),
   problems: (state = 'open', days = 30, host = '') => call('GET', `/api/problems?state=${state}&days=${days}${host ? `&host=${host}` : ''}`),
   ack: (id, comment) => call('POST', `/api/problems/${id}/ack`, { comment }),

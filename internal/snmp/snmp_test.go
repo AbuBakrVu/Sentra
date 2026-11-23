@@ -1,6 +1,53 @@
 package snmp
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+
+	"github.com/gosnmp/gosnmp"
+)
+
+func TestReadIfaces(t *testing.T) {
+	var base, extended []gosnmp.SnmpPDU
+	for i, name := range []string{"Eeth2", "eth6", "eth7_b1", "Lvlan42", "eth6.42", "Lbond23", "veth_vpn_host", "Leth6", "lo"} {
+		index := i + 1
+		kind := 6
+		if name == "lo" {
+			kind = 24
+		}
+		base = append(base,
+			gosnmp.SnmpPDU{Name: fmt.Sprintf("%s.1.%d", oidIfTable, index), Type: gosnmp.Integer, Value: index},
+			gosnmp.SnmpPDU{Name: fmt.Sprintf("%s.3.%d", oidIfTable, index), Type: gosnmp.Integer, Value: kind},
+			gosnmp.SnmpPDU{Name: fmt.Sprintf("%s.6.%d", oidIfTable, index), Type: gosnmp.OctetString, Value: []byte{2, 1, 2, 3, 4, byte(index)}},
+			gosnmp.SnmpPDU{Name: fmt.Sprintf("%s.7.%d", oidIfTable, index), Type: gosnmp.Integer, Value: 1},
+			gosnmp.SnmpPDU{Name: fmt.Sprintf("%s.8.%d", oidIfTable, index), Type: gosnmp.Integer, Value: 2},
+		)
+		extended = append(extended, gosnmp.SnmpPDU{Name: fmt.Sprintf("%s.1.%d", oidIfXTable, index), Type: gosnmp.OctetString, Value: name})
+		if index != 3 { // разъём eth7_b1 определяется по Ethernet и MAC без ifConnectorPresent
+			extended = append(extended, gosnmp.SnmpPDU{Name: fmt.Sprintf("%s.17.%d", oidIfXTable, index), Type: gosnmp.Integer, Value: 1})
+		}
+	}
+	extended = append(extended,
+		gosnmp.SnmpPDU{Name: oidIfXTable + ".6.1", Type: gosnmp.Counter64, Value: uint64(1<<54 + 1)},
+		gosnmp.SnmpPDU{Name: oidIfXTable + ".10.1", Type: gosnmp.Counter64, Value: uint64(1<<54 + 2)},
+	)
+	stack := []gosnmp.SnmpPDU{{Name: oidIfStack + ".8.2", Type: gosnmp.Integer, Value: 1}}
+	rows := readIfaces(base, extended, stack)
+	if len(rows) != 8 {
+		t.Fatalf("got %d interfaces, want 8", len(rows))
+	}
+	for i, row := range rows {
+		if row.Index != i+1 || row.Physical != (i < 3) {
+			t.Errorf("interface %d: %+v", i+1, row)
+		}
+	}
+	if got := rows[0]; got.MAC != "02:01:02:03:04:01" || got.OperStatus != 2 || !got.Counters || !got.HC || got.In != 1<<54+1 || got.Out != 1<<54+2 {
+		t.Errorf("physical port metadata: %+v", got)
+	}
+	if rows[1].Counters {
+		t.Error("missing counters must not become zero traffic")
+	}
+}
 
 func TestNormalizeAddr(t *testing.T) {
 	for in, want := range map[string]string{

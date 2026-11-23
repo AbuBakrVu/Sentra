@@ -2,8 +2,13 @@ package server
 
 import (
 	"context"
+	"encoding/json"
+	"io"
+	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -46,6 +51,45 @@ func TestSNMPIfaceProblems(t *testing.T) {
 	snmpIfaceProblems(h, want)
 	if len(want) != 1 || want["if:wan"].title != "Интерфейс wan (Ростелеком) не на связи" || want["if:wan"].sev != 1 {
 		t.Errorf("%+v", want)
+	}
+}
+
+func TestSNMPIfaceRates(t *testing.T) {
+	prev := snmp.Iface{Name: "eth6", Speed: 1e9, In: 1<<32 - 20, Out: 100, Counters: true}
+	cur := prev
+	cur.In, cur.Out = 80, 100
+	if rx, tx, ok := snmpIfaceRates(prev, cur, 10); !ok || rx != 10 || tx != 0 {
+		t.Fatalf("32-bit counter wrap: rx=%v tx=%v ok=%v", rx, tx, ok)
+	}
+	cur.Discontinuity++
+	if _, _, ok := snmpIfaceRates(prev, cur, 10); ok {
+		t.Fatal("counter reset produced a traffic rate")
+	}
+}
+
+func TestSNMPPortChart(t *testing.T) {
+	st := testStore(t)
+	const port = `WAN "2"`
+	id, err := st.UpsertPVEHost("snmp-test", "dev", kindSNMP, "Ideco", time.Now().Unix(), nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	vm := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if query := r.URL.Query().Get("query"); !strings.Contains(query, `,iface="WAN \"2\""}`) {
+			t.Errorf("query does not select the requested port: %s", query)
+		}
+		io.WriteString(w, `{"status":"success","data":{"result":[{"metric":{},"values":[]}]}}`)
+	}))
+	defer vm.Close()
+	server := &Server{st: st, vm: NewVM(vm.URL)}
+	req := httptest.NewRequest("GET", "/chart?m=net&iface="+url.QueryEscape(port), nil)
+	req.SetPathValue("id", id)
+	response := httptest.NewRecorder()
+	server.chart(response, req, nil)
+	var chart Chart
+	if response.Code != 200 || json.Unmarshal(response.Body.Bytes(), &chart) != nil || chart.Unit != "B/s" ||
+		len(chart.Series) != 2 || chart.Series[0].Label != "Приём" || chart.Series[1].Label != "Передача" {
+		t.Fatalf("chart response: %d %s", response.Code, response.Body.String())
 	}
 }
 
