@@ -29,6 +29,7 @@ export function subtitle(h) {
   if (h.kind === 'vmw-host') return ['Хост ESXi', m.esx_version, m.cluster && `кластер ${m.cluster}`].filter(Boolean).join(', ')
   if (h.kind === 'vmw-vm') return [`ВМ, ${m.maxcpu} vCPU, ${bytesShort(m.maxmem)}`, m.ip].filter(Boolean).join(', ')
   if (h.kind === 'snmp') return [m.vendor || 'SNMP', m.addr?.replace(/:161$/, '')].filter(Boolean).join(', ')
+  if (h.kind === 'pbs') return [m.datastore, m.namespace].filter(Boolean).join(' / ')
   return [h.inventory?.os_name, h.inventory?.ips?.[0]].filter(Boolean).join(', ')
 }
 
@@ -58,6 +59,9 @@ export function groups(list) {
     } else if (h.kind === 'snmp') {
       key = 'snmp'
       title = 'Сетевые устройства'
+    } else if (h.kind === 'pbs') {
+      key = 'pbs'
+      title = 'Резервные копии (PBS)'
     } else {
       key = 'agents'
       title = 'Серверы'
@@ -66,16 +70,16 @@ export function groups(list) {
     out.get(key).items.push(h)
   }
   const gs = [...out.values()]
-  const flat = (g) => g.key === 'agents' || g.key === 'snmp' // группы без узла виртуализации
+  const flat = (g) => g.key === 'agents' || g.key === 'snmp' || g.key === 'pbs' // группы без узла виртуализации
   // несколько подключений Proxmox или VMware: узлы с одинаковыми именами различаем по кластеру
   const many = new Set(gs.filter((g) => !flat(g)).map((g) => g.src)).size > 1
   if (many) for (const g of gs) if (!flat(g)) g.title = `${g.src}: ${groupLabel(g.title)}`
   // сначала серверы и сетевые устройства, затем по кластеру, внутри по номеру узла: pve2 раньше pve10
-  const rank = { agents: 0, snmp: 1 }
-  gs.sort((a, b) => (rank[a.key] ?? 2) - (rank[b.key] ?? 2)
+  const rank = { agents: 0, snmp: 1, pbs: 2 }
+  gs.sort((a, b) => (rank[a.key] ?? 3) - (rank[b.key] ?? 3)
     || (a.src || '').localeCompare(b.src || '', 'ru') || a.title.localeCompare(b.title, 'ru', { numeric: true }))
   for (const g of gs) {
-    if (g.key === 'snmp') g.items.sort((a, b) => a.name.localeCompare(b.name, 'ru', { numeric: true }))
+    if (g.key === 'snmp' || g.key === 'pbs') g.items.sort((a, b) => a.name.localeCompare(b.name, 'ru', { numeric: true }))
     else if (g.key !== 'agents') g.items.sort((a, b) => (kindOrder[a.kind] ?? 2) - (kindOrder[b.kind] ?? 2))
     const vms = g.items.filter(isGuest)
     const running = vms.filter((h) => h.status !== 'stopped' && h.status !== 'offline').length
@@ -83,6 +87,8 @@ export function groups(list) {
       ? `${g.items.length} ${plural(g.items.length, 'сервер', 'сервера', 'серверов')} с агентом`
       : g.key === 'snmp'
       ? `${g.items.length} ${plural(g.items.length, 'устройство', 'устройства', 'устройств')} по SNMP`
+      : g.key === 'pbs'
+      ? `${g.items.length} ${plural(g.items.length, 'подключение', 'подключения', 'подключений')}`
       : `${[!many && g.src, `${vms.length} ${plural(vms.length, 'машина', 'машины', 'машин')}, запущено ${running}`].filter((x) => x && x !== g.title).join(', ')}`
   }
   return gs

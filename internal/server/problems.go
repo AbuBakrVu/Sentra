@@ -256,6 +256,9 @@ func (e *Engine) Eval(h *Host, now time.Time) {
 		if h.Kind == kindSNMP {
 			t = "Нет ответа по SNMP"
 		}
+		if h.Kind == kindPBS {
+			t = "Нет данных от Proxmox Backup Server"
+		}
 		if pve {
 			t = "Нет данных от " + virtName(h.Kind)
 			if n := e.machinesOn(h); isVirtNode(h.Kind) && n > 0 {
@@ -292,6 +295,9 @@ func (e *Engine) Eval(h *Host, now time.Time) {
 		}
 		if h.Kind == kindSNMP {
 			snmpIfaceProblems(h, want)
+		}
+		if h.Kind == kindPBS {
+			pbsProblems(h, want)
 		}
 		if fs, ok := m["fs"].(map[string]any); ok {
 			for mount, raw := range fs {

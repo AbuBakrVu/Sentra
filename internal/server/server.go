@@ -115,6 +115,8 @@ func (s *Server) Handler() http.Handler {
 	m.HandleFunc("POST /api/snmp", s.auth(s.addSNMP))
 	m.HandleFunc("PUT /api/snmp/{id}", s.auth(s.updateSNMP))
 	m.HandleFunc("DELETE /api/snmp/{id}", s.auth(s.deleteSNMP))
+	m.HandleFunc("GET /api/pbs", s.auth(s.listPBS))
+	m.HandleFunc("POST /api/pbs", s.auth(s.addPBS))
 	m.HandleFunc("GET /api/inet", s.auth(s.getInet))
 	m.HandleFunc("PUT /api/inet", s.auth(s.putInet))
 	m.HandleFunc("GET /api/inet/outages", s.auth(s.inetOutages))
@@ -500,15 +502,16 @@ func view(h *Host, open []*Problem) hostView {
 	}
 	if !v.Online {
 		v.Status = "offline"
-		if pve {
-			v.Issues = append(v.Issues, "Нет данных от "+virtName(h.Kind))
-		} else {
-			if h.Kind == kindSNMP {
-				v.Issues = append(v.Issues, "Нет ответа по SNMP")
-			} else {
-				v.Issues = append(v.Issues, "Нет данных от агента")
-			}
+		msg := "Нет данных от агента"
+		switch {
+		case pve:
+			msg = "Нет данных от " + virtName(h.Kind)
+		case h.Kind == kindSNMP:
+			msg = "Нет ответа по SNMP"
+		case h.Kind == kindPBS:
+			msg = "Нет данных от Proxmox Backup Server"
 		}
+		v.Issues = append(v.Issues, msg)
 		return v
 	}
 	if pve {
@@ -630,7 +633,7 @@ func (s *Server) renameHost(w http.ResponseWriter, r *http.Request, _ *User) {
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
-func (s *Server) deleteHost(w http.ResponseWriter, r *http.Request, _ *User) {
+func (s *Server) deleteHost(w http.ResponseWriter, r *http.Request, u *User) {
 	if r.PathValue("id") == inetHostID {
 		httpErr(w, 400, "проверка интернета отключается на странице «Интернет»")
 		return
@@ -652,6 +655,10 @@ func (s *Server) deleteHost(w http.ResponseWriter, r *http.Request, _ *User) {
 			return
 		}
 		writeJSON(w, 200, map[string]bool{"ok": true})
+		return
+	}
+	if h, err := s.st.Host(r.PathValue("id")); err == nil && h.Kind == kindPBS && u.Role != "admin" {
+		httpErr(w, 403, "отключение PBS доступно администратору")
 		return
 	}
 	if err := s.st.DeleteHost(r.PathValue("id")); err != nil {
