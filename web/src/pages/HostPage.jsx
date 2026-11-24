@@ -60,7 +60,7 @@ export default function HostPage({ id, canManage }) {
 
   async function remove() {
     const detail = h.kind === 'pbs' ? ' Резервные копии в PBS сохранятся.'
-      : isPVE(h) ? '' : h.kind === 'snmp' ? ' Настройки SNMP на самом устройстве останутся, их можно выключить отдельно.' : ' Агент на сервере нужно будет остановить отдельно.'
+      : isPVE(h) || h.kind === 'ping' ? '' : h.kind === 'snmp' ? ' Настройки SNMP на самом устройстве останутся, их можно выключить отдельно.' : ' Агент на сервере нужно будет остановить отдельно.'
     if (!confirm(`Удалить «${h.name}» из мониторинга? История графиков сохранится в хранилище, но устройство пропадёт из панели.${detail}`)) return
     try { await api.remove(id); navigate('/') } catch (err) { alert(err.message) }
   }
@@ -81,14 +81,21 @@ export default function HostPage({ id, canManage }) {
   const pve = isPVE(h)
   const kindName = { 'pve-node': 'Узел Proxmox', 'pve-qemu': 'Виртуальная машина (QEMU)', 'pve-lxc': 'Контейнер (LXC)', 'vmw-host': 'Хост ESXi', 'vmw-vm': 'Виртуальная машина VMware' }[h.kind]
   const vmwSrc = meta.source_kind === 'vcenter' ? 'vCenter' : 'ESXi'
-  const facts = isPBS ? [
+  const ping = h.ping
+  const pingText = !ping ? 'Ожидается проверка' : ({ up: 'Отвечает', down: 'Нет ответа', error: 'Не удалось проверить' }[ping.state] || 'Нет данных')
+  const pingFacts = [
+    ['Последний ping', ping ? `${pingText} · ${ago(ping.checked_at)}` : pingText],
+    ...(ping?.state === 'up' ? [['Время ответа', `${ping.rtt_ms.toLocaleString('ru-RU')} мс`]] : []),
+    ...(ping?.last_reply ? [['Последний ответ на ping', new Date(ping.last_reply * 1000).toLocaleString('ru-RU')]] : []),
+  ]
+  const facts = h.kind === 'ping' ? [['Тип', 'Проверка доступности по ICMP'], ['IP-адрес', meta.addr], ...pingFacts] : isPBS ? [
     ['Адрес PBS', meta.url],
     ['Хранилище', meta.datastore],
     ['Пространство имён', meta.namespace || 'Корневое'],
     ['Занято', meta.space_total ? `${bytes(meta.space_used)} из ${bytes(meta.space_total)}` : '—'],
     ['Свободно', bytes(meta.space_available)],
     ['Порог свежести', `${meta.warn_hours} ч`],
-  ] : isSNMP ? snmpFacts(h, m) : isVMW(h) ? [
+  ] : isSNMP ? [...pingFacts, ...snmpFacts(h, m)] : isVMW(h) ? [
     ['Тип', kindName],
     ['Подключение', meta.source_name && `${meta.source_name} (${vmwSrc})`],
     meta.cluster ? ['Кластер', meta.cluster] : null,
@@ -125,6 +132,7 @@ export default function HostPage({ id, canManage }) {
   ].filter(([, v]) => v)
 
   const charts = {
+    ping: [],
     pbs: meta.space_total ? [['disk', 'Заполнение хранилища']] : [],
     'pve-node': [['cpu', 'Процессор'], ['mem', 'Память'], ['disk', 'Заполнение хранилищ'], ['load', 'Средняя нагрузка (load average)']],
     'pve-qemu': [['cpu', 'Процессор'], ['mem', 'Память'], ['net', 'Сеть'], ...(m.disk_max_mount ? [['disk', 'Диск']] : [])],
@@ -159,10 +167,13 @@ export default function HostPage({ id, canManage }) {
         <p className="lead">
           <span className={`badge s-${h.status}`}>{statusText[h.status]}</span>
           {h.issues.length > 0 && <span> {h.issues.join(', ')}</span>}
-          {h.last_seen > 0 && <Fresh at={h.last_seen * 1000} label="Данные получены" stale={180} />}
+          {h.last_seen > 0 && <Fresh at={h.last_seen * 1000} label={h.kind === 'ping' ? 'Последний ответ' : 'Данные получены'} stale={180} />}
         </p>
       </div>
 
+      {isSNMP && h.last_seen > 0 && Date.now() / 1000 - h.last_seen >= 180 && (
+        <p className="banner info">Показаны значения последнего успешного опроса SNMP от {new Date(h.last_seen * 1000).toLocaleString('ru-RU')}.</p>
+      )}
       {isSNMP && (
         <SNMPPorts key={id} id={id} meta={meta} range={range} tick={tick} history={history}>{rangePicker}</SNMPPorts>
       )}
@@ -376,6 +387,6 @@ function snmpFacts(h, m) {
     ['Местоположение', meta.location],
     ['Память', meta.maxmem ? bytes(meta.maxmem) : null],
     ['Работает без перезагрузки', m.uptime_seconds != null ? duration(m.uptime_seconds) : null],
-    ['Данные', h.last_seen ? `по SNMP, ${ago(h.last_seen)}` : null],
+    ['Успешный опрос SNMP', h.last_seen ? new Date(h.last_seen * 1000).toLocaleString('ru-RU') : 'Ожидается опрос'],
   ].filter(([, v]) => v)
 }

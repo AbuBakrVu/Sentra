@@ -28,6 +28,7 @@ export function subtitle(h) {
   if (h.kind === 'pve-lxc') return `Контейнер ${m.vmid}, ${m.maxcpu} vCPU, ${bytesShort(m.maxmem)}`
   if (h.kind === 'vmw-host') return ['Хост ESXi', m.esx_version, m.cluster && `кластер ${m.cluster}`].filter(Boolean).join(', ')
   if (h.kind === 'vmw-vm') return [`ВМ, ${m.maxcpu} vCPU, ${bytesShort(m.maxmem)}`, m.ip].filter(Boolean).join(', ')
+  if (h.kind === 'ping') return `Ping, ${h.meta?.addr}`
   if (h.kind === 'snmp') return [m.vendor || 'SNMP', m.addr?.replace(/:161$/, '')].filter(Boolean).join(', ')
   if (h.kind === 'pbs') return [m.datastore, m.namespace].filter(Boolean).join(' / ')
   return [h.inventory?.os_name, h.inventory?.ips?.[0]].filter(Boolean).join(', ')
@@ -56,6 +57,9 @@ export function groups(list) {
       key = `${isVMW(h) ? 'vmw' : 'pve'}:${h.source_id}:${h.meta?.node}`
       title = `${virtName(h)}: ${h.meta?.node || 'хост неизвестен'}`
       src = h.meta?.source_name
+    } else if (h.kind === 'ping') {
+      key = 'ping'
+      title = 'Устройства по IP'
     } else if (h.kind === 'snmp') {
       key = 'snmp'
       title = 'Сетевые устройства'
@@ -70,20 +74,20 @@ export function groups(list) {
     out.get(key).items.push(h)
   }
   const gs = [...out.values()]
-  const flat = (g) => g.key === 'agents' || g.key === 'snmp' || g.key === 'pbs' // группы без узла виртуализации
+  const flat = (g) => g.key === 'agents' || g.key === 'ping' || g.key === 'snmp' || g.key === 'pbs' // группы без узла виртуализации
   // несколько подключений Proxmox или VMware: узлы с одинаковыми именами различаем по кластеру
   const many = new Set(gs.filter((g) => !flat(g)).map((g) => g.src)).size > 1
   if (many) for (const g of gs) if (!flat(g)) g.title = `${g.src}: ${groupLabel(g.title)}`
   // сначала серверы и сетевые устройства, затем по кластеру, внутри по номеру узла: pve2 раньше pve10
-  const rank = { agents: 0, snmp: 1, pbs: 2 }
+  const rank = { agents: 0, ping: 1, snmp: 1, pbs: 2 }
   gs.sort((a, b) => (rank[a.key] ?? 3) - (rank[b.key] ?? 3)
     || (a.src || '').localeCompare(b.src || '', 'ru') || a.title.localeCompare(b.title, 'ru', { numeric: true }))
   for (const g of gs) {
-    if (g.key === 'snmp' || g.key === 'pbs') g.items.sort((a, b) => a.name.localeCompare(b.name, 'ru', { numeric: true }))
+    if (g.key === 'ping' || g.key === 'snmp' || g.key === 'pbs') g.items.sort((a, b) => a.name.localeCompare(b.name, 'ru', { numeric: true }))
     else if (g.key !== 'agents') g.items.sort((a, b) => (kindOrder[a.kind] ?? 2) - (kindOrder[b.kind] ?? 2))
     const vms = g.items.filter(isGuest)
     const running = vms.filter((h) => h.status !== 'stopped' && h.status !== 'offline').length
-    g.note = g.key === 'agents'
+    g.note = g.key === 'ping' ? 'Проверка доступности по ICMP' : g.key === 'agents'
       ? `${g.items.length} ${plural(g.items.length, 'сервер', 'сервера', 'серверов')} с агентом`
       : g.key === 'snmp'
       ? `${g.items.length} ${plural(g.items.length, 'устройство', 'устройства', 'устройств')} по SNMP`
@@ -175,9 +179,11 @@ function Tile({ h }) {
         <span className={`badge s-${h.status}`}>{statusText[h.status]}</span>
       </div>
       <div className="tile-sub">{subtitle(h)}</div>
-      {h.status === 'stopped' ? (
+      {h.kind === 'ping' ? (
+        <p className="tile-note">{h.ping ? `Последняя проверка: ${ago(h.ping.checked_at)}${h.ping.state === 'up' ? `, ${ms(h.ping.rtt_ms)}` : ''}` : 'Ожидается первая проверка'}</p>
+      ) : h.status === 'stopped' ? (
         <p className="tile-note">{h.meta?.status === 'suspended' ? 'Приостановлена' : 'Выключена'} в {virtName(h)}</p>
-      ) : h.status === 'waiting' || !h.online ? (
+      ) : h.status === 'waiting' || !metricsFresh(h) ? (
         <p className="tile-note">{h.status === 'waiting' ? 'Агент зарегистрирован, ждём первые метрики' : `Последние данные ${ago(h.last_seen)}`}</p>
       ) : (
         <div className="meters">
@@ -210,11 +216,15 @@ function nowText(h) {
   return 'В порядке'
 }
 
+function metricsFresh(h) {
+  return h.online && h.status !== 'stopped' && (h.kind !== 'snmp' || Date.now() / 1000 - h.last_seen < 180)
+}
+
 const sorters = {
   name: (h) => h.name.toLowerCase(),
-  cpu: (h) => (h.online && h.status !== 'stopped' ? h.last_metrics?.cpu_usage_percent ?? -1 : -1),
-  mem: (h) => (h.online && h.status !== 'stopped' ? h.last_metrics?.mem_used_percent ?? -1 : -1),
-  disk: (h) => (h.online && h.status !== 'stopped' ? h.last_metrics?.disk_max_percent ?? -1 : -1),
+  cpu: (h) => (metricsFresh(h) ? h.last_metrics?.cpu_usage_percent ?? -1 : -1),
+  mem: (h) => (metricsFresh(h) ? h.last_metrics?.mem_used_percent ?? -1 : -1),
+  disk: (h) => (metricsFresh(h) ? h.last_metrics?.disk_max_percent ?? -1 : -1),
   av: (h) => (h.availability?.young ? 101 : h.availability?.pct ?? 101),
 }
 
@@ -385,7 +395,7 @@ function HostTable({ g, sort, setSort, closed, onToggle, cols, setCols }) {
             </tr>
           ) : sortItems(g.items, sort).map((h) => {
             const m = h.last_metrics || {}
-            const live = h.online && h.status !== 'stopped'
+            const live = metricsFresh(h)
             const now = nowText(h)
             return (
               <tr key={h.id} className={`row-${h.status}`}>
@@ -445,7 +455,7 @@ function counts(items) {
 // карта всех машин и строки только про машины с проблемами. По кнопке карточка
 // раскрывается на всю ширину и показывает все машины плитками.
 function GroupTiles({ g, shown, open, toggle }) {
-  const compact = g.items.length >= COMPACT_FROM
+  const compact = g.key !== 'ping' && g.items.length >= COMPACT_FROM
   if (!compact) {
     return (
       <section className="group" aria-labelledby={`g-${g.key}`}>
@@ -613,7 +623,7 @@ export default function Overview({ canManage }) {
   const inFilter = new Set(byFilter.filter(visible).map((h) => h.id))
   const allGroups = groups(sorted)
     .map((g) => ({ g, shown: g.items.filter((h) => inFilter.has(h.id)) }))
-    .filter(({ g, shown }) => shown.length > 0 || (filter === 'all' && g.items.length >= COMPACT_FROM))
+    .filter(({ g, shown }) => shown.length > 0 || (filter === 'all' && g.key !== 'ping' && g.items.length >= COMPACT_FROM))
   const stopped = hosts.filter((h) => h.status === 'stopped').length
   const offline = hosts.filter((h) => h.status === 'offline').length
   const online = hosts.filter((h) => h.online && h.status !== 'stopped').length
@@ -627,7 +637,7 @@ export default function Overview({ canManage }) {
   const badDays = days.filter((d) => d === 'down').length
   const v = verdict(open)
   // в больших группах проблемы и так видны в карточке узла
-  const hasCards = allGroups.some(({ g }) => g.items.length >= COMPACT_FROM)
+  const hasCards = allGroups.some(({ g }) => g.key !== 'ping' && g.items.length >= COMPACT_FROM)
   const showDevices = (f) => { setFilter(f); document.getElementById('devices')?.scrollIntoView({ behavior: 'smooth' }) }
 
   return (
@@ -649,7 +659,7 @@ export default function Overview({ canManage }) {
         <Stat featured title="Проблемы сейчас" value={open.length} to="/problems"
           sub={open.length ? `${crit} ${plural(crit, 'авария', 'аварии', 'аварий')} · ${warn} ${plural(warn, 'предупреждение', 'предупреждения', 'предупреждений')}` : 'аварий и предупреждений нет'} />
         <Stat title="Нет связи" value={offline} tone={offline ? 'bad' : ''} onClick={() => showDevices('now')}
-          sub={offline ? 'данных нет дольше 3 минут' : 'все устройства отвечают'} />
+          sub={offline ? 'устройства без связи' : 'все устройства отвечают'} />
         <Stat title="На связи" value={<>{online}<small> из {active}</small></>} onClick={() => showDevices('all')}
           sub={stopped ? `ещё ${stopped} ${plural(stopped, 'машина выключена', 'машины выключены', 'машин выключено')}` : 'выключенных машин нет'} />
         <Stat title="Доступность за 30 дней" value={young ? <span className="few">мало данных</span> : pctText(avg)} tone={pctTone(avg)} onClick={() => showDevices('past')}

@@ -1,3 +1,4 @@
+import AddIP from './AddIP.jsx'
 import AddServer from './AddServer.jsx'
 import AddProxmox from './AddProxmox.jsx'
 import AddPBS from './AddPBS.jsx'
@@ -10,6 +11,7 @@ export function equipmentSetup(path, inDialog = false) {
   if (snmpDevice) return <AddSNMP key={snmpDevice} initialDevice={snmpDevice} inDialog={inDialog} />
 
   switch (path) {
+    case '/add/ip': return <AddIP inDialog={inDialog} />
     case '/add/linux': return <AddServer inDialog={inDialog} />
     case '/add/proxmox': return <AddProxmox inDialog={inDialog} />
     case '/add/pbs': return <AddPBS inDialog={inDialog} />

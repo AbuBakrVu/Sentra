@@ -70,7 +70,7 @@ export default function App() {
   if (!canManage && (path === '/users' || path === '/add' || path.startsWith('/add/'))) {
     page = <p className="banner critical" role="alert">Этот раздел доступен администратору.</p>
   } else if (path === '/internet' || host?.[1] === 'internet') page = <Internet canManage={canManage} />
-  else if (host) page = <HostPage id={host[1]} canManage={canManage} />
+  else if (host) page = <HostPage key={host[1]} id={host[1]} canManage={canManage} />
   else if (catalog) page = <AddEquipment />
   else if (path === '/settings') page = <Settings />
   else if (path === '/users') page = <Users />
@@ -130,6 +130,7 @@ function AddMenu() {
       {open && (
         <div className="me-pop" role="menu">
           <Link to="/add" role="menuitem" onClick={() => setOpen(false)}><Icon name="grid" size={18} /><span>Каталог оборудования</span></Link>
+          <Link to="/add/ip" role="menuitem" onClick={() => setOpen(false)}><Icon name="network" size={18} /><span>По IP-адресу<small>Проверка доступности</small></span></Link>
           <Link to="/add/linux" role="menuitem" onClick={() => setOpen(false)}><Icon name="server" size={18} /><span>Сервер с агентом<small>Linux, одна команда</small></span></Link>
           <Link to="/add/proxmox" role="menuitem" onClick={() => setOpen(false)}><Icon name="layers" size={18} /><span>Proxmox<small>узлы и все машины сразу</small></span></Link>
           <Link to="/add/pbs" role="menuitem" onClick={() => setOpen(false)}><Icon name="server" size={18} /><span>Proxmox Backup Server<small>хранилища и свежесть копий</small></span></Link>
@@ -223,7 +224,7 @@ function HostSearch() {
   const load = () => { if (!list) api.hosts().then(setList).catch(() => setList([])) }
   const needle = q.trim().toLowerCase()
   const found = !needle || !list ? [] : list.filter((h) =>
-    [h.name, h.inventory?.hostname, ...(h.inventory?.ips || []), h.meta?.node].filter(Boolean).some((x) => String(x).toLowerCase().includes(needle))).slice(0, 8)
+    [h.name, h.meta?.addr, h.meta?.ip, h.inventory?.hostname, ...(h.inventory?.ips || []), h.meta?.node].filter(Boolean).some((x) => String(x).toLowerCase().includes(needle))).slice(0, 8)
 
   const go = (h) => { setQ(''); setOpen(false); setList(null); ref.current?.blur(); navigate(`/hosts/${h.id}`) }
   const mac = /Mac|iPhone|iPad/.test(navigator.platform)

@@ -23,9 +23,10 @@ const categories = [
     ],
   },
   {
-    id: 'network', title: 'Сетевые устройства', subtitle: 'по SNMP',
+    id: 'network', title: 'Сетевые устройства', subtitle: 'ping и SNMP',
     description: 'Процессор, память и каждый интерфейс: связь и трафик.',
     items: [
+      { title: 'Устройство по IP-адресу', detail: 'Проверка доступности по ICMP', href: '/add/ip', keywords: 'ip ipv4 ping пинг сеть доступность' },
       { title: 'Ideco NGFW', detail: 'SNMPv3, пользователь и ключ шифрования', href: '/add/snmp', keywords: 'айдеко ideco ngfw утм utm фаервол межсетевой экран' },
       { title: 'MikroTik', detail: 'SNMPv3 или v2c, IP › SNMP', href: '/add/snmp/mikrotik', keywords: 'микротик routeros маршрутизатор роутер' },
       { title: 'UserGate', detail: 'SNMPv3', href: '/add/snmp/usergate', keywords: 'юзергейт фаервол межсетевой экран' },
@@ -56,7 +57,7 @@ function useConnectionCounts(refresh) {
         ...prev,
         servers: live.filter((h) => h.kind === 'agent').length,
         virtualization: virtualization.size + live.filter((h) => h.kind === 'pbs').length,
-        network: live.filter((h) => h.kind === 'snmp').length,
+        network: live.filter((h) => h.kind === 'snmp' || h.kind === 'ping').length,
       }))
     }).catch(() => {})
     api.inet().then(({ config }) => {

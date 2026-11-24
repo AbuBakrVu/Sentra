@@ -113,6 +113,7 @@ func (s *Server) Handler() http.Handler {
 	m.HandleFunc("DELETE /api/vmware/{id}", s.admin(s.deleteVMW))
 	m.HandleFunc("POST /api/vmware/{id}/trust", s.admin(s.trustVMW))
 	m.HandleFunc("GET /api/snmp", s.admin(s.listSNMP))
+	m.HandleFunc("POST /api/ip", s.admin(s.addIP))
 	m.HandleFunc("POST /api/snmp", s.admin(s.addSNMP))
 	m.HandleFunc("PUT /api/snmp/{id}", s.admin(s.updateSNMP))
 	m.HandleFunc("DELETE /api/snmp/{id}", s.admin(s.deleteSNMP))
@@ -490,6 +491,14 @@ func view(h *Host, open []*Problem) hostView {
 	}
 	if h.Kind == "inet" && h.Meta["disabled"] == true {
 		v.Status = "stopped"
+		return v
+	}
+	if status, message := probeCondition(h, time.Now()); status != "" {
+		v.Status = status
+		v.Online = status == "ok" || status == "warning"
+		if message != "" {
+			v.Issues = append(v.Issues, message)
+		}
 		return v
 	}
 	if h.LastSeen == 0 {

@@ -75,7 +75,7 @@ func (p *Prober) Probe(ctx context.Context, addr string, ports []int) Result {
 		return Result{Sent: 1}
 	}
 	if p.open != nil {
-		if r := p.ping(ctx, ip); r.Up() {
+		if r := p.ping(ctx, ip, pingCount); r.Up() {
 			return r
 		}
 		if ms, ok := tcpAlive(ctx, ip, ports); ok {
@@ -101,6 +101,22 @@ func (p *Prober) Probe(ctx context.Context, addr string, ports []int) Result {
 		r.AvgMs = sum / float64(r.Recv)
 	}
 	return r
+}
+
+// Echo проверяет IPv4 только по ICMP. Ошибка отправки отличается от отсутствия ответа.
+func (p *Prober) Echo(ctx context.Context, addr string) (Result, error) {
+	if p.open == nil {
+		return Result{}, errors.New("ICMP недоступен на сервере мониторинга")
+	}
+	ip, err := resolve(ctx, addr)
+	if err != nil {
+		return Result{}, err
+	}
+	r := p.ping(ctx, ip, 2)
+	if r.Sent == 0 {
+		return r, errors.New("не удалось отправить ICMP-запрос")
+	}
+	return r, nil
 }
 
 func resolve(ctx context.Context, addr string) (net.IP, error) {
@@ -159,7 +175,7 @@ func echo(id, seq uint16, raw bool) []byte {
 	return b
 }
 
-func (p *Prober) ping(ctx context.Context, ip net.IP) Result {
+func (p *Prober) ping(ctx context.Context, ip net.IP, count uint16) Result {
 	r := Result{Via: "icmp"}
 	c, raw, err := p.open()
 	if err != nil {
@@ -173,13 +189,13 @@ func (p *Prober) ping(ctx context.Context, ip net.IP) Result {
 	id := uint16(time.Now().UnixNano())
 	buf := make([]byte, 1500)
 	var sum float64
-	for seq := uint16(1); seq <= pingCount && ctx.Err() == nil; seq++ {
+	for seq := uint16(1); seq <= count && ctx.Err() == nil; seq++ {
 		start := time.Now()
-		r.Sent++
 		if _, err := c.WriteTo(echo(id, seq, raw), dst); err != nil {
 			sleep(ctx, pingInterval)
 			continue
 		}
+		r.Sent++
 		c.SetReadDeadline(start.Add(pingTimeout))
 		for {
 			n, from, err := c.ReadFrom(buf)
@@ -200,7 +216,7 @@ func (p *Prober) ping(ctx context.Context, ip net.IP) Result {
 			}
 			break
 		}
-		if seq < pingCount {
+		if seq < count {
 			sleep(ctx, pingInterval-time.Since(start))
 		}
 	}

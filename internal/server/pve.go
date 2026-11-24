@@ -40,6 +40,7 @@ func newPVEPoller() *pvePoller {
 func (s *Server) StartPollers(ctx context.Context) {
 	s.startVMW(ctx)
 	s.startSNMP(ctx)
+	go s.pollPing(ctx)
 	s.startPBS(ctx)
 	go func() {
 		t := time.NewTicker(pvePollEvery)

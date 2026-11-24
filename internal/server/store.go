@@ -113,10 +113,11 @@ CREATE TABLE IF NOT EXISTS settings (
 
 // миграции колонок: SQLite не умеет ADD COLUMN IF NOT EXISTS
 var hostColumns = []struct{ name, def string }{
-	{"kind", "TEXT NOT NULL DEFAULT 'agent'"},     // agent, pve-node, pve-qemu, pve-lxc, vmw-host, vmw-vm, snmp, inet
-	{"source_id", "TEXT NOT NULL DEFAULT ''"},     // id подключения Proxmox
-	{"ext_id", "TEXT NOT NULL DEFAULT ''"},        // qemu/100, node/pve1
-	{"meta", "TEXT NOT NULL DEFAULT '{}'"},        // данные из Proxmox: узел, vmid, статус
+	{"kind", "TEXT NOT NULL DEFAULT 'agent'"}, // agent, pve-node, pve-qemu, pve-lxc, vmw-host, vmw-vm, snmp, inet
+	{"source_id", "TEXT NOT NULL DEFAULT ''"}, // id подключения Proxmox
+	{"ext_id", "TEXT NOT NULL DEFAULT ''"},    // qemu/100, node/pve1
+	{"meta", "TEXT NOT NULL DEFAULT '{}'"},    // данные из Proxmox: узел, vmid, статус
+	{"ping_result", "TEXT NOT NULL DEFAULT 'null'"},
 	{"maint_until", "INTEGER NOT NULL DEFAULT 0"}, // режим обслуживания до (unix)
 	{"maint_comment", "TEXT NOT NULL DEFAULT ''"}, // кто и зачем включил
 }
@@ -317,6 +318,7 @@ func (s *Store) EnrollTokenValid(tok string) bool {
 // ---------- хосты ----------
 
 type Host struct {
+	Ping        *PingResult     `json:"ping,omitempty"`
 	ID          string          `json:"id"`
 	Name        string          `json:"name"`
 	Inventory   proto.Inventory `json:"inventory"`
@@ -372,11 +374,12 @@ func (s *Store) TouchHost(id string, ts int64, last map[string]any, inv *proto.I
 
 func scanHost(sc interface{ Scan(...any) error }) (*Host, error) {
 	var h Host
-	var inv, lm string
+	var inv, lm, ping string
 	var meta string
-	if err := sc.Scan(&h.ID, &h.Name, &inv, &h.LastSeen, &lm, &h.CreatedAt, &h.Kind, &h.SourceID, &meta, &h.MaintUntil, &h.MaintNote); err != nil {
+	if err := sc.Scan(&h.ID, &h.Name, &inv, &h.LastSeen, &lm, &h.CreatedAt, &h.Kind, &h.SourceID, &meta, &h.MaintUntil, &h.MaintNote, &ping); err != nil {
 		return nil, err
 	}
+	json.Unmarshal([]byte(ping), &h.Ping)
 	json.Unmarshal([]byte(inv), &h.Inventory)
 	json.Unmarshal([]byte(lm), &h.LastMetrics)
 	json.Unmarshal([]byte(meta), &h.Meta)
@@ -386,7 +389,7 @@ func scanHost(sc interface{ Scan(...any) error }) (*Host, error) {
 	return &h, nil
 }
 
-const hostCols = `id, name, inventory, last_seen, last_metrics, created_at, kind, source_id, meta, maint_until, maint_comment`
+const hostCols = `id, name, inventory, last_seen, last_metrics, created_at, kind, source_id, meta, maint_until, maint_comment, ping_result`
 
 func (s *Store) Hosts() ([]*Host, error) {
 	rows, err := s.db.Query(`SELECT ` + hostCols + ` FROM hosts ORDER BY name COLLATE NOCASE`)

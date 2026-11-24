@@ -33,6 +33,7 @@ export const api = {
   logout: () => call('POST', '/api/logout'),
   password: (old, nw) => call('POST', '/api/password', { old, new: nw }),
   createUser: (login, password) => call('POST', '/api/users', { login, password }),
+  addIP: (addr, name) => call('POST', '/api/ip', { addr, name }),
   hosts: () => call('GET', '/api/hosts'),
   host: (id) => call('GET', `/api/hosts/${id}`),
   rename: (id, name) => call('PATCH', `/api/hosts/${id}`, { name }),

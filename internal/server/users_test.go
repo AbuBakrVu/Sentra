@@ -60,5 +60,6 @@ func TestCreateMonitoringUser(t *testing.T) {
 	request(http.MethodPost, "/api/enroll", "{}", viewer, http.StatusForbidden)
 	request(http.MethodDelete, "/api/hosts/example", "", viewer, http.StatusForbidden)
 	request(http.MethodGet, "/api/snmp", "", viewer, http.StatusForbidden)
+	request(http.MethodPost, "/api/ip", `{"addr":"192.0.2.9"}`, viewer, http.StatusForbidden)
 	request(http.MethodPost, "/api/password", `{"old":"fixture-viewer-password","new":"fixture-updated-password"}`, viewer, http.StatusOK)
 }

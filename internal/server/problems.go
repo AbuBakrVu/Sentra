@@ -225,7 +225,7 @@ func (e *Engine) level(hostID string, r rule, v float64, now time.Time, critExtr
 // Eval сверяет состояние устройства с открытыми проблемами: открывает новые,
 // обновляет текущие и закрывает те, что прошли.
 func (e *Engine) Eval(h *Host, now time.Time) {
-	if h.LastSeen == 0 {
+	if h.LastSeen == 0 && h.Kind != kindPing {
 		return
 	}
 	e.mu.Lock()
@@ -246,7 +246,18 @@ func (e *Engine) Eval(h *Host, now time.Time) {
 	pve := isVirt(h.Kind)
 	status, _ := h.Meta["status"].(string)
 	gone, _ := h.Meta["gone"].(float64)
+	probe, message := probeCondition(h, now)
 	switch {
+	case h.Kind == kindPing:
+		if probe == "offline" {
+			want["offline"] = desired{"down", 2, message, 0}
+		}
+		if probe == "waiting" {
+			return
+		}
+	case probe == "warning":
+		want["snmp_data"] = desired{"degraded", 1, message, 0}
+		keep = true
 	case h.Kind == "inet":
 		keep = e.evalInet(h, now, open, want)
 	case pve && gone == 1:
@@ -345,7 +356,7 @@ func (e *Engine) Eval(h *Host, now time.Time) {
 		if _, ok := want[key]; ok {
 			continue
 		}
-		if keep && key != "offline" {
+		if keep && key != "offline" && key != "snmp_data" {
 			continue
 		}
 		e.st.CloseProblem(p.ID, at)
