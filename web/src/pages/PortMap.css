@@ -1,0 +1,80 @@
+.snmp-map {
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--card);
+  background: var(--surface);
+}
+.snmp-port-bank {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(88px, 1fr);
+  align-items: start;
+  gap: 2px;
+}
+.snmp-port-bank.paired { grid-template-rows: auto auto; }
+.snmp-port-bank + .snmp-port-bank { margin-top: 12px; }
+.snmp-port {
+  position: relative;
+  --signal: var(--off);
+  --tint: var(--off-bg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  min-width: 0;
+  padding: 8px 2px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+.snmp-port:hover { background: var(--bg); }
+.snmp-port[aria-pressed="true"] { border-color: var(--line); background: var(--bg); }
+.snmp-port[data-state="up"] { --signal: var(--ok); --tint: var(--ok-bg); }
+.snmp-port[data-state="down"] { --signal: var(--crit); --tint: var(--crit-bg); }
+.snmp-port-name { max-width: 100%; overflow-wrap: anywhere; font-size: 13px; }
+.snmp-jack {
+  position: relative;
+  display: block;
+  width: 48px;
+  height: 36px;
+  border: 3px solid var(--signal);
+  border-radius: 4px;
+  background: var(--surface);
+}
+.snmp-jack::before {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  background: #282c29;
+  clip-path: polygon(0 28%, 18% 28%, 18% 14%, 32% 14%, 32% 0, 68% 0, 68% 14%, 82% 14%, 82% 28%, 100% 28%, 100% 100%, 0 100%);
+}
+.snmp-jack i {
+  position: absolute;
+  width: 30px;
+  height: 6px;
+  left: 6px;
+  bottom: 3px;
+  background: repeating-linear-gradient(90deg, #d9b968 0 2px, transparent 2px 4px);
+}
+.snmp-port-status { color: var(--signal); background: var(--tint); border-radius: 12px; padding: 1px 5px; font-size: 12px; }
+.snmp-port-rates { display: grid; font-size: 11px; line-height: 1.45; color: var(--ink-2); }
+
+.snmp-port-info {
+  position: sticky;
+  left: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 8px;
+  border-top: 1px solid var(--line-soft);
+  padding-top: 8px;
+  font-size: 12px;
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}

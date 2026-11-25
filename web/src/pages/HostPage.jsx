@@ -70,6 +70,7 @@ export default function HostPage({ id, canManage }) {
 
   const inv = h.inventory, m = h.last_metrics || {}, meta = h.meta || {}
   const isSNMP = h.kind === 'snmp'
+  const staleSNMP = isSNMP && (h.snmp_poll_failed || !h.last_seen || Date.now() / 1000 - h.last_seen >= 180)
   const isPBS = h.kind === 'pbs'
   const rangePicker = (
     <div className="toolbar" role="group" aria-label="Период графиков">
@@ -171,11 +172,11 @@ export default function HostPage({ id, canManage }) {
         </p>
       </div>
 
-      {isSNMP && h.last_seen > 0 && Date.now() / 1000 - h.last_seen >= 180 && (
+      {staleSNMP && h.last_seen > 0 && (
         <p className="banner info">Показаны значения последнего успешного опроса SNMP от {new Date(h.last_seen * 1000).toLocaleString('ru-RU')}.</p>
       )}
       {isSNMP && (
-        <SNMPPorts key={id} id={id} meta={meta} range={range} tick={tick} history={history}>{rangePicker}</SNMPPorts>
+        <SNMPPorts stale={staleSNMP} key={id} id={id} meta={meta} range={range} tick={tick} history={history}>{rangePicker}</SNMPPorts>
       )}
 
       <section className="host-av" aria-labelledby="av-h">

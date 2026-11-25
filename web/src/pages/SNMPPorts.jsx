@@ -3,15 +3,7 @@ import Chart from '../Chart.jsx'
 import { bitrate } from '../format.js'
 import { marksFor } from '../marks.js'
 
-function linkStatus(port) {
-  if (port.admin_status === 2 || (port.admin_status == null && !port.admin_up)) return 'Выключен'
-  if (port.up) return 'На связи'
-  if (port.oper_status === 6) return 'Отсутствует'
-  if (port.oper_status === 3 || port.admin_status === 3) return 'Тестирование'
-  if (port.oper_status === 5) return 'Ожидает подключения'
-  if (port.oper_status === 2 || port.oper_status === 7 || port.oper_status == null) return 'Нет связи'
-  return 'Неизвестно'
-}
+import PortMap, { linkStatus } from './PortMap.jsx'
 
 function PortRows({ ports, label, selected, watched, select }) {
   return (
@@ -40,11 +32,13 @@ function PortRows({ ports, label, selected, watched, select }) {
   )
 }
 
-export default function SNMPPorts({ id, meta, range, tick, history, children }) {
+export default function SNMPPorts({ id, meta, range, tick, history, stale, children }) {
   const [selectedId, select] = useState(null)
   const ports = meta.ifaces || []
-  const physical = ports.filter((port) => port.physical)
-  const other = ports.filter((port) => !port.physical)
+  // A cluster interface has no verified front-panel position. Keep its metrics available below.
+  const isJack = (port) => port.physical && port.name !== 'if_cluster'
+  const physical = ports.filter(isJack)
+  const other = ports.filter((port) => !isJack(port))
   const preferred = physical.length ? physical : ports
   const selected = ports.find((port) => (port.index ?? port.name) === selectedId) || preferred.find((port) => port.up) || preferred[0]
   const iface = selected?.traffic_label || selected?.name
@@ -53,9 +47,9 @@ export default function SNMPPorts({ id, meta, range, tick, history, children }) 
 
   return (
     <section className="storages snmp-ports" aria-labelledby="if-h">
-      <h2 id="if-h">Физические порты {physical.length > 0 && <span className="muted small">{physical.filter((port) => port.up).length} из {physical.length} на связи</span>}</h2>
+      <h2 id="if-h">Физические порты {physical.length > 0 && !stale && <span className="muted small">{physical.filter((port) => port.up).length} из {physical.length} на связи</span>}</h2>
       {physical.length > 0
-        ? <PortRows label="Физические порты" ports={physical} {...rowProps} />
+        ? <PortMap ports={physical} meta={meta} stale={stale} selected={selected} select={select} />
         : <p className="muted small">{ports.length ? 'Пока не удалось определить физические порты по данным SNMP.' : 'Данные об интерфейсах ещё не получены по SNMP.'}</p>}
       {other.length > 0 && (physical.length > 0 ? (
         <details className="other-ports">

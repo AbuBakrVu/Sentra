@@ -471,12 +471,13 @@ func (s *Server) download(w http.ResponseWriter, r *http.Request) {
 
 type hostView struct {
 	*Host
-	Online   bool          `json:"online"`
-	Status   string        `json:"status"` // ok, warning, critical, offline, waiting, stopped
-	Issues   []string      `json:"issues"`
-	Problems []*Problem    `json:"problems"`
-	Maint    bool          `json:"maintenance"`
-	Av       *Availability `json:"availability,omitempty"`
+	SNMPPollFailed bool          `json:"snmp_poll_failed,omitempty"`
+	Online         bool          `json:"online"`
+	Status         string        `json:"status"` // ok, warning, critical, offline, waiting, stopped
+	Issues         []string      `json:"issues"`
+	Problems       []*Problem    `json:"problems"`
+	Maint          bool          `json:"maintenance"`
+	Av             *Availability `json:"availability,omitempty"`
 }
 
 // view собирает состояние устройства: связь и статус Proxmox берём напрямую,
@@ -633,6 +634,12 @@ func (s *Server) getHost(w http.ResponseWriter, r *http.Request, _ *User) {
 	if err != nil {
 		httpErr(w, 500, err.Error())
 		return
+	}
+	if h.Kind == kindSNMP {
+		device, err := s.st.SNMPDevice(h.SourceID)
+		if err == nil {
+			out[0].SNMPPollFailed = device.LastError != ""
+		}
 	}
 	writeJSON(w, 200, out[0])
 }
