@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../api.js'
 import { Link } from '../App.jsx'
-import { ago, plural, statusText, guestHint, toolsHint } from '../format.js'
+import { bitrate, ago, plural, statusText, guestHint, toolsHint } from '../format.js'
 import Icon from '../Icons.jsx'
 import AvailabilityBar, { avText, avTone, hadProblems, pctText, pctTone } from '../Availability.jsx'
 import Fresh from '../Fresh.jsx'
@@ -530,6 +530,13 @@ function readOpenGroups() {
 }
 
 // Строка про интернет-канал под счётчиками.
+function channelRate(rate, capacity) {
+  const speed = bitrate(rate)
+  if (rate == null || !capacity) return speed
+  const percent = (rate * 8 / (capacity * 1e6)).toLocaleString('ru-RU', { style: 'percent', maximumFractionDigits: 1 })
+  return speed + ' (' + percent + ')'
+}
+
 function InetStrip({ h }) {
   const m = h.last_metrics || {}
   const up = m.inet_up === 1
@@ -541,6 +548,8 @@ function InetStrip({ h }) {
       <span className="inet-now">
         {h.issues.length ? h.issues[0] : h.status === 'waiting' ? 'первая проверка займёт до минуты' : up ? `потери ${lossText(m.loss5)}, задержка ${ms(m.rtt5)}` : ''}
       </span>
+      {h.wan && <span className="inet-wan">Загрузка канала · {h.wan.rx == null && h.wan.tx == null
+        ? 'нет данных' : <>↓ {channelRate(h.wan.rx, h.wan.download_mbps)} · ↑ {channelRate(h.wan.tx, h.wan.upload_mbps)}</>}</span>}
       <span className="muted inet-av">{h.availability?.young ? 'доступность: мало данных' : <>за 30 дней <b className={`pct ${pctTone(h.availability?.pct)}`}>{pctText(h.availability?.pct)}</b></>}</span>
       <Icon name="arrow" size={18} />
     </Link>
@@ -573,7 +582,7 @@ export default function Overview({ canManage }) {
   const { hosts: all, error, checkedAt } = useHosts()
   // интернет-канал — не устройство: у него своя строка и своя страница
   const hosts = useMemo(() => all?.filter((h) => h.kind !== 'inet') ?? null, [all])
-  const inet = all?.find((h) => h.kind === 'inet' && h.status !== 'stopped')
+  const inet = all?.find((h) => h.kind === 'inet' && (h.status !== 'stopped' || h.wan))
   const [filter, setFilter] = useState('all')
   const [viewMode, setViewMode] = useState(readView)
   const [showStopped, setShowStopped] = useState(() => { try { return localStorage.getItem('sentra.stopped') === '1' } catch { return false } })

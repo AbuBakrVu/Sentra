@@ -137,17 +137,22 @@ export default function Internet({ canManage }) {
             <AvailabilityBar av={h.availability} />
           </section>
 
+        </>
+      )}
+      {(on || d.config.wan) && <>
           <div className="toolbar" role="group" aria-label="Период графиков">
             {rangeList.map(([r, label]) => (
               <button key={r} className={range === r ? 'seg active' : 'seg'} onClick={() => pickRange(r)}>{label}</button>
             ))}
           </div>
-          <div className="charts">
+          {d.config.wan && <Chart key={JSON.stringify([d.config.wan.host, d.config.wan.iface])}
+            hostId={d.config.wan.host} iface={d.config.wan.iface} metric="net" range={range} refreshKey={tick}
+            title={`Интернет-трафик · ${d.config.wan.iface}`} />}
+          {on && <div className="charts">
             <Chart hostId="internet" metric="inet_rtt" range={range} refreshKey={tick} title="Задержка" marks={marksFor('inet_rtt', probs)} />
             <Chart hostId="internet" metric="inet_loss" range={range} refreshKey={tick} title="Потери пакетов" marks={marksFor('inet_loss', probs)} />
-          </div>
-        </>
-      )}
+          </div>}
+      </>}
 
       {rep && (on || rep.outages.length > 0) && (
         <section className="inet-outages" aria-labelledby="out-h">
@@ -234,15 +239,30 @@ function InetSettings({ config, onSaved }) {
   const [msg, setMsg] = useState(null)
   const [busy, setBusy] = useState(false)
 
+  const [devices, setDevices] = useState([])
+  const [deviceError, setDeviceError] = useState('')
+  const [host, setHost] = useState(config.wan?.host || '')
+  const [iface, setIface] = useState(config.wan?.iface || '')
+  const [download, setDownload] = useState(config.wan?.download_mbps || '')
+  const [upload, setUpload] = useState(config.wan?.upload_mbps || '')
+  useEffect(() => {
+    let alive = true
+    api.hosts().then((items) => { if (alive) setDevices(items.filter((h) => h.kind === 'snmp')) })
+      .catch((err) => { if (alive) setDeviceError(err.message) })
+    return () => { alive = false }
+  }, [])
+  const ports = devices.find((h) => h.id === host)?.meta?.ifaces || []
+  const portKey = (p) => p.traffic_label || p.name
+
   const edit = (i, k, v) => setTargets(targets.map((t, j) => (j === i ? { ...t, [k]: v } : t)))
 
   async function submit(e) {
     e.preventDefault()
     setBusy(true); setMsg(null)
     try {
-      const r = await api.inetSave({ enabled, router, targets })
+      const r = await api.inetSave({ enabled, router, targets, wan: host ? { host, iface, download_mbps: Number(download), upload_mbps: Number(upload) } : null })
       setTargets(r.config.targets)
-      setMsg({ tone: 'ok', text: enabled ? 'Сохранено. Новая проверка уже идёт, результат появится в течение минуты.' : 'Проверка интернета выключена.' })
+      setMsg({ tone: 'ok', text: 'Настройки сохранены.' })
       onSaved?.(r.config)
     } catch (err) { setMsg({ tone: 'critical', text: err.message }) }
     setBusy(false)
@@ -266,6 +286,29 @@ function InetSettings({ config, onSaved }) {
         ))}
         {targets.length < 5 && <button type="button" className="link-btn" onClick={() => setTargets([...targets, { name: '', addr: '' }])}>Добавить адрес</button>}
         <span className="hint">Интернет считается недоступным, только когда не отвечает ни один из них. Один заблокированный адрес картину не портит.</span>
+      </fieldset>
+      <fieldset className="tgts">
+        <legend>Интернет-трафик</legend>
+        {deviceError && <p role="alert">{deviceError}</p>}
+        <label>Шлюз SNMP
+          <select value={host} onChange={(e) => { setHost(e.target.value); setIface('') }}>
+            <option value="">Не выбран</option>
+            {host && !devices.some((h) => h.id === host) && <option value={host}>{host}</option>}
+            {devices.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
+          </select>
+        </label>
+        {host && <>
+          <label>WAN-интерфейс
+            <select value={iface} required onChange={(e) => setIface(e.target.value)}>
+              <option value="">Выберите интерфейс</option>
+              {iface && !ports.some((p) => portKey(p) === iface) && <option value={iface}>{iface} (нет данных)</option>}
+              {ports.map((p) => <option key={portKey(p)} value={portKey(p)}>{portKey(p)}{p.alias && p.alias !== p.name ? ' · ' + p.alias : ''}</option>)}
+            </select>
+          </label>
+          <label>Приём по тарифу, Мбит/с<input type="number" min="0.001" step="any" value={download} onChange={(e) => setDownload(e.target.value)} /></label>
+          <label>Передача по тарифу, Мбит/с<input type="number" min="0.001" step="any" value={upload} onChange={(e) => setUpload(e.target.value)} /></label>
+          <span className="hint">Укажите скорости по договору, чтобы видеть процент загрузки на обзоре.</span>
+        </>}
       </fieldset>
       {msg && <p className={`banner ${msg.tone}`}>{msg.text}</p>}
       <button className="btn primary" type="submit" disabled={busy}>Сохранить</button>

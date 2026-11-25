@@ -471,6 +471,7 @@ func (s *Server) download(w http.ResponseWriter, r *http.Request) {
 
 type hostView struct {
 	*Host
+	WAN            *wanReading   `json:"wan,omitempty"`
 	SNMPPollFailed bool          `json:"snmp_poll_failed,omitempty"`
 	Online         bool          `json:"online"`
 	Status         string        `json:"status"` // ok, warning, critical, offline, waiting, stopped
@@ -601,6 +602,9 @@ func (s *Server) views(hs []*Host) ([]hostView, error) {
 			}
 		}
 		v := view(h, open)
+		if h.Kind == "inet" {
+			v.WAN = s.wanReading(s.inetConfig().WAN)
+		}
 		if h.LastSeen != 0 {
 			av := availabilityFor(h.CreatedAt, byHost[h.ID], now)
 			v.Av = &av

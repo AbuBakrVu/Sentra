@@ -9,6 +9,7 @@ import (
 	"math"
 	"net"
 	"net/http"
+	"reflect"
 	"regexp"
 	"sort"
 	"strconv"
@@ -51,7 +52,62 @@ type InetTarget struct {
 	Addr string `json:"addr"`
 }
 
+type WANConfig struct {
+	Host      string  `json:"host"`
+	Interface string  `json:"iface"` // метка интерфейса в истории трафика
+	Download  float64 `json:"download_mbps"`
+	Upload    float64 `json:"upload_mbps"`
+}
+
+type wanReading struct {
+	RX *float64 `json:"rx"`
+	TX *float64 `json:"tx"`
+	*WANConfig
+}
+
+// Используем счётчики последнего опроса SNMP. Нулевой трафик отличается от пропущенного замера.
+func (s *Server) wanReading(cfg *WANConfig) *wanReading {
+	if cfg == nil {
+		return nil
+	}
+	reading := &wanReading{WANConfig: cfg}
+	h, err := s.st.Host(cfg.Host)
+	if err != nil || h.Kind != kindSNMP || time.Now().Unix()-h.LastSeen >= 180 {
+		return reading
+	}
+	device, err := s.st.SNMPDevice(h.SourceID)
+	if err != nil || device.LastError != "" {
+		return reading
+	}
+	port := wanPort(h, cfg.Interface)
+	if port["up"] == true {
+		if rx, ok := port["rx"].(float64); ok {
+			reading.RX = &rx
+		}
+		if tx, ok := port["tx"].(float64); ok {
+			reading.TX = &tx
+		}
+	}
+	return reading
+}
+
+func wanPort(h *Host, label string) map[string]any {
+	ports, _ := h.Meta["ifaces"].([]any)
+	for _, raw := range ports {
+		p, _ := raw.(map[string]any)
+		key, _ := p["traffic_label"].(string)
+		if key == "" {
+			key, _ = p["name"].(string)
+		}
+		if key == label {
+			return p
+		}
+	}
+	return nil
+}
+
 type InetConfig struct {
+	WAN     *WANConfig   `json:"wan,omitempty"`
 	Enabled bool         `json:"enabled"`
 	Router  string       `json:"router"` // адрес роутера в офисе, можно не указывать
 	Targets []InetTarget `json:"targets"`
@@ -499,9 +555,27 @@ func (s *Server) putInet(w http.ResponseWriter, r *http.Request, u *User) {
 			names[k] = true
 		}
 	}
+	old := s.inetConfig()
+	if wan := in.WAN; wan != nil {
+		if wan.Host == "" || wan.Interface == "" || wan.Download < 0 || wan.Upload < 0 {
+			httpErr(w, 400, "выберите WAN-интерфейс и укажите положительную скорость тарифа или оставьте её пустой")
+			return
+		}
+		if old.WAN == nil || wan.Host != old.WAN.Host || wan.Interface != old.WAN.Interface {
+			h, err := s.st.Host(wan.Host)
+			if err != nil || h.Kind != kindSNMP || wanPort(h, wan.Interface) == nil {
+				httpErr(w, 400, "выбранный интерфейс отсутствует в данных SNMP")
+				return
+			}
+		}
+	}
 	raw, _ := json.Marshal(in)
 	if err := s.st.SetSetting("inet", string(raw)); err != nil {
 		httpErr(w, 500, err.Error())
+		return
+	}
+	if old.Enabled == in.Enabled && old.Router == in.Router && reflect.DeepEqual(old.Targets, in.Targets) {
+		writeJSON(w, 200, map[string]any{"config": in})
 		return
 	}
 	s.inet.reset()
