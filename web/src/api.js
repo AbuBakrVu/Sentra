@@ -44,6 +44,7 @@ export const api = {
   ack: (id, comment) => call('POST', `/api/problems/${id}/ack`, { comment }),
   maintenance: (id, minutes, comment) => call('POST', `/api/hosts/${id}/maintenance`, { minutes, comment }),
   inet: () => call('GET', '/api/inet'),
+  wan: () => call('GET', '/api/inet/wan'),
   inetSave: (body) => call('PUT', '/api/inet', body),
   inetOutages: (days = 30) => call('GET', `/api/inet/outages?days=${days}`),
   pveList: () => call('GET', '/api/pve'),

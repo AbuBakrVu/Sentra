@@ -1,12 +1,14 @@
 package snmp
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gosnmp/gosnmp"
 )
@@ -14,6 +16,43 @@ import (
 // Net-SNMP на Linux может объявлять разъём у виртуального интерфейса.
 // Учитываем известные системные имена, включая интерфейсы Ideco.
 var logicalIfaceName = regexp.MustCompile(`(?i)^(?:veth|virbr|ipsec|ccwg_|fwtest$|sw_|lb_|(?:lo|lvlan|lbond|lvpn|eppp|ppp|vlan|bond|team|bridge|br|tun|tap|wg|vxlan|gre|gretap|dummy|docker|sit)(?:[0-9_.-]|$))|\.[0-9]+$`)
+
+// PollInterface reads the counters and status for one interface without walking the device.
+func PollInterface(ctx context.Context, addr string, auth Auth, index int) (Iface, uint32, error) {
+	g, err := client(ctx, addr, auth, 1500*time.Millisecond, 0)
+	if err != nil {
+		return Iface{}, 0, err
+	}
+	defer g.Conn.Close()
+	suffix := "." + strconv.Itoa(index)
+	basic := []string{oidSysUpTime, oidIfTable + ".1" + suffix, oidIfTable + ".2" + suffix,
+		oidIfTable + ".5" + suffix, oidIfTable + ".6" + suffix, oidIfTable + ".8" + suffix,
+		oidIfTable + ".10" + suffix, oidIfTable + ".16" + suffix}
+	keys := append(basic, oidIfXTable+".1"+suffix, oidIfXTable+".6"+suffix, oidIfXTable+".10"+suffix,
+		oidIfXTable+".15"+suffix, oidIfXTable+".19"+suffix)
+	m, err := get(g, keys...)
+	if err != nil && ctx.Err() == nil {
+		// Some older agents fail the entire request when it includes ifXTable OIDs.
+		m, err = get(g, basic...)
+	}
+	if err != nil {
+		return Iface{}, 0, err
+	}
+	var rows, extended []gosnmp.SnmpPDU
+	for _, pdu := range m {
+		switch {
+		case strings.HasPrefix(pdu.Name, oidIfTable+"."):
+			rows = append(rows, pdu)
+		case strings.HasPrefix(pdu.Name, oidIfXTable+"."):
+			extended = append(extended, pdu)
+		}
+	}
+	ports := readIfaces(rows, extended, nil)
+	if len(ports) != 1 || ports[0].Index != index {
+		return Iface{}, 0, fmt.Errorf("нет данных SNMP для интерфейса %d", index)
+	}
+	return ports[0], uint32(num(m[oidSysUpTime])), nil
+}
 
 func readIfaces(ifs, xs, stack []gosnmp.SnmpPDU) []Iface {
 	it, xt := table(ifs, oidIfTable), table(xs, oidIfXTable)

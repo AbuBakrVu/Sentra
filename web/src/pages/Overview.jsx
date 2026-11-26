@@ -556,7 +556,36 @@ function WanCard({ channel }) {
         <span><span className="muted">↑ Передача</span> <b>{bitrate(channel.tx)}</b>
           {sendLoad != null && <span className="muted"> · {loadPercent.format(sendLoad)}</span>}
         </span>
+        <Fresh at={channel.measured_at * 1000} label="Замер" stale={15} />
       </span>
+    </span>
+  )
+}
+
+function WanCards({ channels }) {
+  const [live, setLive] = useState(null)
+  useEffect(() => {
+    let active = true
+    let timer
+    const refresh = async () => {
+      try {
+        const readings = await api.wan()
+        if (active) setLive(readings)
+      } catch {
+        if (active) setLive(null)
+      } finally {
+        if (active) timer = setTimeout(refresh, 5000)
+      }
+    }
+    refresh()
+    return () => { active = false; clearTimeout(timer) }
+  }, [])
+
+  const readings = live ?? channels.map((c) => ({ ...c, rx: null, tx: null }))
+  if (!readings.length) return null
+  return (
+    <span className="inet-wan-list">
+      {readings.map((channel) => <WanCard key={JSON.stringify([channel.host, channel.iface])} channel={channel} />)}
     </span>
   )
 }
@@ -575,13 +604,7 @@ function InetStrip({ h }) {
       </span>}
       {checked && <span className="muted inet-av">{!h.availability || h.availability.young ? 'доступность: мало данных' : <>за 30 дней <b className={`pct ${pctTone(h.availability.pct)}`}>{pctText(h.availability.pct)}</b></>}</span>}
       <Icon name="arrow" size={18} />
-      {h.wan_channels?.length > 0 && (
-        <span className="inet-wan-list">
-          {h.wan_channels.map((channel) => (
-            <WanCard key={JSON.stringify([channel.host, channel.iface])} channel={channel} />
-          ))}
-        </span>
-      )}
+      {h.wan_channels?.length > 0 && <WanCards channels={h.wan_channels} />}
     </Link>
   )
 }

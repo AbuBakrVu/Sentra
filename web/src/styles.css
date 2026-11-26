@@ -390,7 +390,9 @@ code { font-family: ui-monospace, 'SF Mono', Consolas, monospace; font-size: 0.9
 .inet-wan-load b { color: var(--night); font-size: 19px; white-space: nowrap; }
 .inet-wan .meter-track { height: 4px; background: var(--brand-bg); }
 .inet-wan .meter-track:empty { visibility: hidden; }
-.inet-wan-rates { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 10px; font-size: 13px; }
+.inet-wan-rates { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; font-size: 13px; }
+.inet-wan-rates .fresh { margin-left: auto; font-size: 11px; gap: 4px; }
+.inet-wan-rates .fresh i { width: 5px; height: 5px; }
 .inet-strip:hover { border-color: #C9C9C3; }
 .inet-strip > svg:first-child { color: var(--night); }
 .inet-strip.s-warning { border-color: #EBD9AA; background: #FFFCF4; }

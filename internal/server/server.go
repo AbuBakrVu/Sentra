@@ -121,6 +121,7 @@ func (s *Server) Handler() http.Handler {
 	m.HandleFunc("POST /api/pbs", s.admin(s.addPBS))
 	m.HandleFunc("GET /api/inet", s.auth(s.getInet))
 	m.HandleFunc("PUT /api/inet", s.admin(s.putInet))
+	m.HandleFunc("GET /api/inet/wan", s.auth(s.getWAN))
 	m.HandleFunc("GET /api/inet/outages", s.auth(s.inetOutages))
 	m.HandleFunc("GET /api/inet/report.csv", s.auth(s.inetReport))
 	m.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {

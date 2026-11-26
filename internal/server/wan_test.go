@@ -2,7 +2,9 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -94,5 +96,81 @@ func TestWANSelectionAndFreshRates(t *testing.T) {
 	cfg.WANChannels = []WANConfig{}
 	if save() != 200 || len(s.inetHostView().WANChannels) != 0 {
 		t.Fatal("WAN channels were not removed")
+	}
+}
+
+func TestLiveWANPollsSelectedPorts(t *testing.T) {
+	st := testStore(t)
+	s := &Server{st: st, inet: newInetPoller()}
+	cfg := defaultInetConfig()
+	cfg.Enabled = false
+	for i, addr := range []string{"192.0.2.1:161", "192.0.2.2:161"} {
+		source, err := st.AddSNMP("Шлюз", addr, snmp.Auth{Version: "2c"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ports := []any{
+			map[string]any{"index": 1, "name": "lan"},
+			map[string]any{"index": i + 2, "name": "wan"},
+		}
+		id, err := st.UpsertPVEHost(source, "dev", kindSNMP, "Шлюз", time.Now().Unix(), nil, map[string]any{"ifaces": ports})
+		if err != nil {
+			t.Fatal(err)
+		}
+		cfg.WANChannels = append(cfg.WANChannels, WANConfig{Host: id, Interface: "wan", Download: 100})
+	}
+	raw, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetSetting("inet", string(raw)); err != nil {
+		t.Fatal(err)
+	}
+	readings := func() []wanReading {
+		response := httptest.NewRecorder()
+		s.getWAN(response, httptest.NewRequest("GET", "/api/inet/wan", nil), &User{})
+		var out []wanReading
+		if err := json.Unmarshal(response.Body.Bytes(), &out); err != nil || len(out) != 2 {
+			t.Fatalf("invalid WAN response: %s (%v)", response.Body, err)
+		}
+		return out
+	}
+	uptime := uint32(10000)
+	var firstIn uint64 = 1000
+	var secondUnavailable bool
+	poll := func(_ context.Context, addr string, _ snmp.Auth, index int) (snmp.Iface, uint32, error) {
+		f := snmp.Iface{Index: index, Name: "wan", OperStatus: 1, Counters: true, HC: true, Speed: 100e6}
+		switch {
+		case addr == "192.0.2.1:161" && index == 2:
+			f.In = firstIn
+		case addr == "192.0.2.2:161" && index == 3:
+			if secondUnavailable {
+				return snmp.Iface{}, 0, errors.New("timeout")
+			}
+		default:
+			t.Errorf("polled unselected interface %s/%d", addr, index)
+			return snmp.Iface{}, 0, errors.New("wrong interface")
+		}
+		return f, uptime, nil
+	}
+
+	s.wanCycle(context.Background(), poll)
+	if got := readings(); got[0].MeasuredAt != 0 || got[0].RX != nil || got[1].RX != nil {
+		t.Fatal("first sample must establish a baseline")
+	}
+	firstIn += 100
+	s.wanCycle(context.Background(), poll)
+	if got := readings(); got[0].MeasuredAt == 0 || got[0].RX == nil || *got[0].RX <= 0 || got[1].RX == nil || *got[1].RX != 0 {
+		t.Fatalf("expected live traffic and a distinct zero sample: %+v", got)
+	}
+	secondUnavailable = true
+	s.wanCycle(context.Background(), poll)
+	if got := readings(); got[0].RX == nil || got[1].RX != nil || got[1].MeasuredAt != 0 {
+		t.Fatal("missing poll should invalidate only that interface")
+	}
+	uptime = 100
+	s.wanCycle(context.Background(), poll)
+	if got := readings(); got[0].RX != nil || got[0].MeasuredAt != 0 {
+		t.Fatal("counter rates must be suppressed on restart")
 	}
 }

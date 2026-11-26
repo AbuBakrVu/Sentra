@@ -66,6 +66,7 @@ type wanReading struct {
 	DeviceName string   `json:"device_name,omitempty"`
 	RX         *float64 `json:"rx"`
 	TX         *float64 `json:"tx"`
+	MeasuredAt int64    `json:"measured_at,omitempty"`
 	*WANConfig
 }
 
@@ -166,6 +167,7 @@ func (s *Store) SetHostMeta(id string, meta map[string]any) error {
 // ---------- опрос ----------
 
 type inetPoller struct {
+	wan    wanPoller
 	prober *netprobe.Prober
 	probe  func(ctx context.Context, addr string, ports []int) netprobe.Result
 	kick   chan struct{}
@@ -231,6 +233,7 @@ func (s *Server) StartInet(ctx context.Context) {
 			log.Printf("интернет: %v", err)
 		}
 	}
+	go s.pollWAN(ctx)
 	go func() {
 		t := time.NewTicker(inetEvery)
 		defer t.Stop()
@@ -579,7 +582,6 @@ func (s *Server) putInet(w http.ResponseWriter, r *http.Request, u *User) {
 		httpErr(w, 400, "можно настроить до двух интернет-каналов")
 		return
 	}
-	type wanKey struct{ host, iface string }
 	previous := map[wanKey]bool{}
 	selected := map[wanKey]bool{}
 	for _, wan := range old.WANChannels {
