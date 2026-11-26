@@ -21,9 +21,32 @@ func TestWANSelectionAndFreshRates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	secondSource, err := st.AddSNMP("PIX", "192.0.2.2:161", snmp.Auth{Version: "2c"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondPort := map[string]any{"name": "internet", "up": true, "rx": 2500000, "tx": 0}
+	secondID, err := st.UpsertPVEHost(secondSource, "dev", kindSNMP, "PIX", time.Now().Unix(), nil, map[string]any{"ifaces": []any{secondPort}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	s := &Server{st: st}
 	cfg := defaultInetConfig()
+	cfg.Enabled = false // SNMP-трафик виден и при выключенной проверке выхода в интернет.
 	cfg.WAN = &WANConfig{Host: id, Interface: "ppp0", Download: 100, Upload: 20}
+	raw, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetSetting("inet", string(raw)); err != nil {
+		t.Fatal(err)
+	}
+	cfg = s.inetConfig()
+	if cfg.WAN != nil || len(cfg.WANChannels) != 1 || cfg.WANChannels[0].Host != id || cfg.WANChannels[0].Download != 100 {
+		t.Fatalf("legacy configuration was not migrated: %+v", cfg)
+	}
+	cfg.WANChannels = append(cfg.WANChannels, WANConfig{Name: "PIX", Host: secondID, Interface: "internet", Download: 80, Upload: 30})
 	save := func() int {
 		data, err := json.Marshal(cfg)
 		if err != nil {
@@ -36,25 +59,40 @@ func TestWANSelectionAndFreshRates(t *testing.T) {
 		return res.Code
 	}
 	if save() != 200 {
-		t.Fatal("could not save WAN binding")
-	}
-	if err := st.EnsureInetHost(); err != nil {
-		t.Fatal(err)
+		t.Fatal("could not save two WAN channels")
 	}
 	v := s.inetHostView()
-	if v == nil || v.WAN == nil || v.WAN.Download != 100 || v.WAN.Upload != 20 || v.WAN.RX == nil || *v.WAN.RX != 0 || v.WAN.TX == nil || *v.WAN.TX != 1250000 {
-		t.Fatalf("missing WAN snapshot: %+v", v)
+	if v == nil || v.Status != "stopped" || len(v.WANChannels) != 2 {
+		t.Fatalf("missing WAN channels: %+v", v)
 	}
+	first, second := v.WANChannels[0], v.WANChannels[1]
+	if first.Download != 100 || first.Upload != 20 || first.RX == nil || *first.RX != 0 || first.TX == nil || *first.TX != 1250000 {
+		t.Fatalf("incorrect first channel: %+v", first)
+	}
+	if second.Name != "PIX" || second.Download != 80 || second.RX == nil || *second.RX != 2500000 || second.TX == nil || *second.TX != 0 {
+		t.Fatalf("incorrect second channel: %+v", second)
+	}
+
 	st.SNMPResult(source, false, "timeout")
-	if v := s.inetHostView().WAN; v.RX != nil || v.TX != nil {
-		t.Fatal("stale traffic exposed")
+	readings := s.inetHostView().WANChannels
+	if readings[0].RX != nil || readings[0].TX != nil || readings[1].RX == nil {
+		t.Fatal("one failed poll should suppress only its own channel")
 	}
-	cfg.WAN.Interface = "missing"
-	if save() != 400 || s.inetConfig().WAN.Interface != "ppp0" {
-		t.Fatal("invalid port replaced binding")
+	cfg.WANChannels = append(cfg.WANChannels, cfg.WANChannels[0])
+	if save() != 400 || len(s.inetConfig().WANChannels) != 2 {
+		t.Fatal("a third channel changed the saved configuration")
 	}
-	cfg.WAN = nil
-	if save() != 200 || s.inetHostView().WAN != nil {
-		t.Fatal("WAN binding was not removed")
+	cfg.WANChannels = cfg.WANChannels[:2]
+	cfg.WANChannels[1] = cfg.WANChannels[0]
+	if save() != 400 || s.inetConfig().WANChannels[1].Host != secondID {
+		t.Fatal("duplicate channel replaced the saved configuration")
+	}
+	cfg.WANChannels[1].Interface = "missing"
+	if save() != 400 || s.inetConfig().WANChannels[1].Host != secondID {
+		t.Fatal("invalid port replaced the saved configuration")
+	}
+	cfg.WANChannels = []WANConfig{}
+	if save() != 200 || len(s.inetHostView().WANChannels) != 0 {
+		t.Fatal("WAN channels were not removed")
 	}
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api } from '../api.js'
 import Chart from '../Chart.jsx'
 import AvailabilityBar, { pctText, pctTone } from '../Availability.jsx'
@@ -27,6 +27,10 @@ const causeText = {
 
 export const ms = (v) => (v == null ? '—' : `${v < 10 ? v.toLocaleString('ru-RU', { maximumFractionDigits: 1 }) : Math.round(v)} мс`)
 export const lossText = (v) => (v == null ? '—' : `${v.toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%`)
+
+export function wanTitle(channel, deviceName = channel.device_name) {
+  return channel.name || [deviceName, channel.iface].filter(Boolean).join(' · ')
+}
 
 function span(sec) {
   if (!sec) return '0 мин'
@@ -61,6 +65,7 @@ export default function Internet({ canManage }) {
   if (!d) return <p className="muted">Загружаем…</p>
 
   const h = d.host
+  const channels = d.config.wan_channels || []
   const on = d.config.enabled && h && h.status !== 'stopped'
   const m = h?.last_metrics || {}
   const live = on && h.status !== 'waiting'
@@ -139,21 +144,32 @@ export default function Internet({ canManage }) {
 
         </>
       )}
-      {(on || d.config.wan) && <>
+      {(on || channels.length > 0) && <>
           <div className="toolbar" role="group" aria-label="Период графиков">
             {rangeList.map(([r, label]) => (
               <button key={r} className={range === r ? 'seg active' : 'seg'} onClick={() => pickRange(r)}>{label}</button>
             ))}
           </div>
-          {d.config.wan && <Chart key={JSON.stringify([d.config.wan.host, d.config.wan.iface])}
-            hostId={d.config.wan.host} iface={d.config.wan.iface} metric="net" range={range} refreshKey={tick}
-            title={`Интернет-трафик · ${d.config.wan.iface}`} />}
+          {channels.length > 0 && (
+            <section aria-labelledby="wan-h" className="storages">
+              <h2 id="wan-h">Интернет-трафик</h2>
+              <div className="charts">
+                {channels.map((channel) => {
+                  const reading = h?.wan_channels?.find((item) => item.host === channel.host && item.iface === channel.iface)
+                  return <Chart key={JSON.stringify([channel.host, channel.iface])}
+                    hostId={channel.host} iface={channel.iface} metric="net" range={range} refreshKey={tick}
+                    title={wanTitle(channel, reading?.device_name)} />
+                })}
+              </div>
+            </section>
+          )}
           {on && <div className="charts">
             <Chart hostId="internet" metric="inet_rtt" range={range} refreshKey={tick} title="Задержка" marks={marksFor('inet_rtt', probs)} />
             <Chart hostId="internet" metric="inet_loss" range={range} refreshKey={tick} title="Потери пакетов" marks={marksFor('inet_loss', probs)} />
           </div>}
       </>}
 
+      {on && channels.length > 1 && <p className="muted small">Проверка доступности и журнал перерывов относятся к маршруту выхода Sentra в интернет.</p>}
       {rep && (on || rep.outages.length > 0) && (
         <section className="inet-outages" aria-labelledby="out-h">
           <div className="dev-head">
@@ -241,26 +257,28 @@ function InetSettings({ config, onSaved }) {
 
   const [devices, setDevices] = useState([])
   const [deviceError, setDeviceError] = useState('')
-  const [host, setHost] = useState(config.wan?.host || '')
-  const [iface, setIface] = useState(config.wan?.iface || '')
-  const [download, setDownload] = useState(config.wan?.download_mbps || '')
-  const [upload, setUpload] = useState(config.wan?.upload_mbps || '')
+  const [channels, setChannels] = useState(() => (config.wan_channels || []).map((channel, key) => ({ ...channel, key })))
+  const nextChannelKey = useRef(channels.length)
+  const editChannel = (key, changes) => {
+    setChannels((current) => current.map((channel) => channel.key === key ? { ...channel, ...changes } : channel))
+  }
+
   useEffect(() => {
     let alive = true
     api.hosts().then((items) => { if (alive) setDevices(items.filter((h) => h.kind === 'snmp')) })
       .catch((err) => { if (alive) setDeviceError(err.message) })
     return () => { alive = false }
   }, [])
-  const ports = devices.find((h) => h.id === host)?.meta?.ifaces || []
-  const portKey = (p) => p.traffic_label || p.name
-
   const edit = (i, k, v) => setTargets(targets.map((t, j) => (j === i ? { ...t, [k]: v } : t)))
 
   async function submit(e) {
     e.preventDefault()
     setBusy(true); setMsg(null)
     try {
-      const r = await api.inetSave({ enabled, router, targets, wan: host ? { host, iface, download_mbps: Number(download), upload_mbps: Number(upload) } : null })
+      const wan_channels = channels.map(({ name, host, iface, download_mbps, upload_mbps }) => ({
+        name, host, iface, download_mbps: Number(download_mbps), upload_mbps: Number(upload_mbps),
+      }))
+      const r = await api.inetSave({ enabled, router, targets, wan_channels })
       setTargets(r.config.targets)
       setMsg({ tone: 'ok', text: 'Настройки сохранены.' })
       onSaved?.(r.config)
@@ -289,29 +307,56 @@ function InetSettings({ config, onSaved }) {
       </fieldset>
       <fieldset className="tgts">
         <legend>Интернет-трафик</legend>
-        {deviceError && <p role="alert">{deviceError}</p>}
-        <label>Шлюз SNMP
-          <select value={host} onChange={(e) => { setHost(e.target.value); setIface('') }}>
-            <option value="">Не выбран</option>
-            {host && !devices.some((h) => h.id === host) && <option value={host}>{host}</option>}
-            {devices.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
-          </select>
-        </label>
-        {host && <>
-          <label>WAN-интерфейс
-            <select value={iface} required onChange={(e) => setIface(e.target.value)}>
-              <option value="">Выберите интерфейс</option>
-              {iface && !ports.some((p) => portKey(p) === iface) && <option value={iface}>{iface} (нет данных)</option>}
-              {ports.map((p) => <option key={portKey(p)} value={portKey(p)}>{portKey(p)}{p.alias && p.alias !== p.name ? ' · ' + p.alias : ''}</option>)}
-            </select>
-          </label>
-          <label>Приём по тарифу, Мбит/с<input type="number" min="0.001" step="any" value={download} onChange={(e) => setDownload(e.target.value)} /></label>
-          <label>Передача по тарифу, Мбит/с<input type="number" min="0.001" step="any" value={upload} onChange={(e) => setUpload(e.target.value)} /></label>
-          <span className="hint">Укажите скорости по договору, чтобы видеть процент загрузки на обзоре.</span>
-        </>}
+        {deviceError && <p className="muted" role="alert">{deviceError}</p>}
+        {channels.map((channel, i) => (
+          <WANFields key={channel.key} channel={channel} number={i + 1} devices={devices}
+            edit={(changes) => editChannel(channel.key, changes)}
+            remove={() => setChannels((current) => current.filter((item) => item.key !== channel.key))} />
+        ))}
+        {channels.length < 2 && <button type="button" className="link-btn" onClick={() => {
+          const key = nextChannelKey.current++
+          setChannels((current) => [...current, { key, name: '', host: '', iface: '', download_mbps: '', upload_mbps: '' }])
+        }}>Добавить канал</button>}
+        {channels.length > 0 && <span className="hint">Укажите скорости по договору, чтобы видеть процент загрузки на обзоре.</span>}
       </fieldset>
       {msg && <p className={`banner ${msg.tone}`}>{msg.text}</p>}
       <button className="btn primary" type="submit" disabled={busy}>Сохранить</button>
     </form>
+  )
+}
+
+function WANFields({ channel, number, devices, edit, remove }) {
+  const device = devices.find((h) => h.id === channel.host)
+  const ports = device?.meta?.ifaces || []
+  const portKey = (port) => port.traffic_label || port.name
+  return (
+    <fieldset className="tgts inet-wan-fields">
+      <legend>Канал {number}</legend>
+      <label>Название канала
+        <input maxLength={40} value={channel.name || ''} onChange={(e) => edit({ name: e.target.value })} />
+      </label>
+      <label>Шлюз SNMP
+        <select required value={channel.host} onChange={(e) => edit({ host: e.target.value, iface: '' })}>
+          <option value="">Выберите устройство</option>
+          {channel.host && !device && <option value={channel.host}>{channel.host}</option>}
+          {devices.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
+        </select>
+      </label>
+      {channel.host && <label>WAN-интерфейс
+        <select required value={channel.iface} onChange={(e) => edit({ iface: e.target.value })}>
+          <option value="">Выберите интерфейс</option>
+          {channel.iface && !ports.some((p) => portKey(p) === channel.iface) &&
+            <option value={channel.iface}>{channel.iface} (нет данных)</option>}
+          {ports.map((p) => <option key={portKey(p)} value={portKey(p)}>{portKey(p)}{p.alias && p.alias !== p.name ? ' · ' + p.alias : ''}</option>)}
+        </select>
+      </label>}
+      <label>Приём по тарифу, Мбит/с
+        <input type="number" min="0" step="any" value={channel.download_mbps || ''} onChange={(e) => edit({ download_mbps: e.target.value })} />
+      </label>
+      <label>Передача по тарифу, Мбит/с
+        <input type="number" min="0" step="any" value={channel.upload_mbps || ''} onChange={(e) => edit({ upload_mbps: e.target.value })} />
+      </label>
+      <button type="button" className="link-btn" onClick={remove}>Убрать канал</button>
+    </fieldset>
   )
 }

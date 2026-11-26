@@ -52,7 +52,10 @@ type InetTarget struct {
 	Addr string `json:"addr"`
 }
 
+const maxWANChannels = 2
+
 type WANConfig struct {
+	Name      string  `json:"name,omitempty"`
 	Host      string  `json:"host"`
 	Interface string  `json:"iface"` // метка интерфейса в истории трафика
 	Download  float64 `json:"download_mbps"`
@@ -60,19 +63,21 @@ type WANConfig struct {
 }
 
 type wanReading struct {
-	RX *float64 `json:"rx"`
-	TX *float64 `json:"tx"`
+	DeviceName string   `json:"device_name,omitempty"`
+	RX         *float64 `json:"rx"`
+	TX         *float64 `json:"tx"`
 	*WANConfig
 }
 
-// Используем счётчики последнего опроса SNMP. Нулевой трафик отличается от пропущенного замера.
-func (s *Server) wanReading(cfg *WANConfig) *wanReading {
-	if cfg == nil {
-		return nil
-	}
-	reading := &wanReading{WANConfig: cfg}
+// Используем скорости последнего опроса SNMP. Нулевой трафик отличается от пропущенного замера.
+func (s *Server) wanReading(cfg WANConfig) wanReading {
+	reading := wanReading{WANConfig: &cfg}
 	h, err := s.st.Host(cfg.Host)
-	if err != nil || h.Kind != kindSNMP || time.Now().Unix()-h.LastSeen >= 180 {
+	if err != nil || h.Kind != kindSNMP {
+		return reading
+	}
+	reading.DeviceName = h.Name
+	if time.Since(time.Unix(h.LastSeen, 0)) >= offlineAfter {
 		return reading
 	}
 	device, err := s.st.SNMPDevice(h.SourceID)
@@ -107,10 +112,11 @@ func wanPort(h *Host, label string) map[string]any {
 }
 
 type InetConfig struct {
-	WAN     *WANConfig   `json:"wan,omitempty"`
-	Enabled bool         `json:"enabled"`
-	Router  string       `json:"router"` // адрес роутера в офисе, можно не указывать
-	Targets []InetTarget `json:"targets"`
+	WAN         *WANConfig   `json:"wan,omitempty"` // прежний формат настроек
+	WANChannels []WANConfig  `json:"wan_channels"`
+	Enabled     bool         `json:"enabled"`
+	Router      string       `json:"router"` // адрес роутера в офисе, можно не указывать
+	Targets     []InetTarget `json:"targets"`
 }
 
 func defaultInetConfig() InetConfig {
@@ -129,7 +135,18 @@ func (s *Server) inetConfig() InetConfig {
 			c = saved
 		}
 	}
+	c.normalizeWANChannels()
 	return c
+}
+
+func (c *InetConfig) normalizeWANChannels() {
+	if c.WANChannels == nil {
+		c.WANChannels = []WANConfig{}
+		if c.WAN != nil {
+			c.WANChannels = append(c.WANChannels, *c.WAN)
+		}
+	}
+	c.WAN = nil
 }
 
 // ---------- хранилище ----------
@@ -208,7 +225,8 @@ func lowerMedian(a []float64) float64 {
 
 // StartInet запускает фоновую проверку интернет-канала. Останавливается с ctx.
 func (s *Server) StartInet(ctx context.Context) {
-	if s.inetConfig().Enabled {
+	cfg := s.inetConfig()
+	if cfg.Enabled || len(cfg.WANChannels) > 0 {
 		if err := s.st.EnsureInetHost(); err != nil {
 			log.Printf("интернет: %v", err)
 		}
@@ -556,17 +574,46 @@ func (s *Server) putInet(w http.ResponseWriter, r *http.Request, u *User) {
 		}
 	}
 	old := s.inetConfig()
-	if wan := in.WAN; wan != nil {
+	in.normalizeWANChannels()
+	if len(in.WANChannels) > maxWANChannels {
+		httpErr(w, 400, "можно настроить до двух интернет-каналов")
+		return
+	}
+	type wanKey struct{ host, iface string }
+	previous := map[wanKey]bool{}
+	selected := map[wanKey]bool{}
+	for _, wan := range old.WANChannels {
+		previous[wanKey{wan.Host, wan.Interface}] = true
+	}
+	for i := range in.WANChannels {
+		wan := &in.WANChannels[i]
+		wan.Name = strings.TrimSpace(wan.Name)
+		if len([]rune(wan.Name)) > 40 {
+			httpErr(w, 400, "название интернет-канала до 40 символов")
+			return
+		}
 		if wan.Host == "" || wan.Interface == "" || wan.Download < 0 || wan.Upload < 0 {
 			httpErr(w, 400, "выберите WAN-интерфейс и укажите положительную скорость тарифа или оставьте её пустой")
 			return
 		}
-		if old.WAN == nil || wan.Host != old.WAN.Host || wan.Interface != old.WAN.Interface {
+		key := wanKey{wan.Host, wan.Interface}
+		if selected[key] {
+			httpErr(w, 400, "для двух каналов выберите разные WAN-интерфейсы")
+			return
+		}
+		selected[key] = true
+		if !previous[key] {
 			h, err := s.st.Host(wan.Host)
 			if err != nil || h.Kind != kindSNMP || wanPort(h, wan.Interface) == nil {
 				httpErr(w, 400, "выбранный интерфейс отсутствует в данных SNMP")
 				return
 			}
+		}
+	}
+	if in.Enabled || len(in.WANChannels) > 0 {
+		if err := s.st.EnsureInetHost(); err != nil {
+			httpErr(w, 500, err.Error())
+			return
 		}
 	}
 	raw, _ := json.Marshal(in)
@@ -579,9 +626,6 @@ func (s *Server) putInet(w http.ResponseWriter, r *http.Request, u *User) {
 		return
 	}
 	s.inet.reset()
-	if in.Enabled {
-		s.st.EnsureInetHost()
-	}
 	if h, err := s.st.Host(inetHostID); err == nil {
 		s.st.SetHostMeta(inetHostID, map[string]any{"disabled": !in.Enabled})
 		if !in.Enabled {

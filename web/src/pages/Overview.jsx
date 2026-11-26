@@ -5,7 +5,7 @@ import { bitrate, ago, plural, statusText, guestHint, toolsHint } from '../forma
 import Icon from '../Icons.jsx'
 import AvailabilityBar, { avText, avTone, hadProblems, pctText, pctTone } from '../Availability.jsx'
 import Fresh from '../Fresh.jsx'
-import { inetStatusText, lossText, ms } from './Internet.jsx'
+import { inetStatusText, lossText, ms, wanTitle } from './Internet.jsx'
 
 const order = { critical: 0, offline: 1, warning: 2, waiting: 3, ok: 4, stopped: 5 }
 const sevText = { 1: 'Внимание', 2: 'Авария' }
@@ -540,18 +540,29 @@ function channelRate(rate, capacity) {
 function InetStrip({ h }) {
   const m = h.last_metrics || {}
   const up = m.inet_up === 1
+  const checked = h.status !== 'stopped'
   return (
     <Link to="/internet" className={`inet-strip s-${h.status}`}>
       <Icon name="globe" size={20} />
       <b>Интернет</b>
       <span className={`badge s-${h.status}`}>{inetStatusText[h.status]}</span>
-      <span className="inet-now">
+      {checked && <span className="inet-now">
         {h.issues.length ? h.issues[0] : h.status === 'waiting' ? 'первая проверка займёт до минуты' : up ? `потери ${lossText(m.loss5)}, задержка ${ms(m.rtt5)}` : ''}
-      </span>
-      {h.wan && <span className="inet-wan">Загрузка канала · {h.wan.rx == null && h.wan.tx == null
-        ? 'нет данных' : <>↓ {channelRate(h.wan.rx, h.wan.download_mbps)} · ↑ {channelRate(h.wan.tx, h.wan.upload_mbps)}</>}</span>}
-      <span className="muted inet-av">{h.availability?.young ? 'доступность: мало данных' : <>за 30 дней <b className={`pct ${pctTone(h.availability?.pct)}`}>{pctText(h.availability?.pct)}</b></>}</span>
+      </span>}
+      {checked && <span className="muted inet-av">{!h.availability || h.availability.young ? 'доступность: мало данных' : <>за 30 дней <b className={`pct ${pctTone(h.availability.pct)}`}>{pctText(h.availability.pct)}</b></>}</span>}
       <Icon name="arrow" size={18} />
+      {h.wan_channels?.length > 0 && (
+        <span className="inet-wan-list" aria-label="Загрузка каналов">
+          {h.wan_channels.map((channel) => (
+            <span className="inet-wan" key={JSON.stringify([channel.host, channel.iface])}>
+              <b>{wanTitle(channel)}</b>
+              <span>{channel.rx == null && channel.tx == null
+                ? 'Нет данных о трафике'
+                : <>↓ {channelRate(channel.rx, channel.download_mbps)} · ↑ {channelRate(channel.tx, channel.upload_mbps)}</>}</span>
+            </span>
+          ))}
+        </span>
+      )}
     </Link>
   )
 }
@@ -582,7 +593,7 @@ export default function Overview({ canManage }) {
   const { hosts: all, error, checkedAt } = useHosts()
   // интернет-канал — не устройство: у него своя строка и своя страница
   const hosts = useMemo(() => all?.filter((h) => h.kind !== 'inet') ?? null, [all])
-  const inet = all?.find((h) => h.kind === 'inet' && (h.status !== 'stopped' || h.wan))
+  const inet = all?.find((h) => h.kind === 'inet' && (h.status !== 'stopped' || h.wan_channels?.length > 0))
   const [filter, setFilter] = useState('all')
   const [viewMode, setViewMode] = useState(readView)
   const [showStopped, setShowStopped] = useState(() => { try { return localStorage.getItem('sentra.stopped') === '1' } catch { return false } })
