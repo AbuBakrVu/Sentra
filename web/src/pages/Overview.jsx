@@ -529,12 +529,36 @@ function readOpenGroups() {
   try { return JSON.parse(localStorage.getItem('sentra.openGroups') || '{}') } catch { return {} }
 }
 
-// Строка про интернет-канал под счётчиками.
-function channelRate(rate, capacity) {
-  const speed = bitrate(rate)
-  if (rate == null || !capacity) return speed
-  const percent = (rate * 8 / (capacity * 1e6)).toLocaleString('ru-RU', { style: 'percent', maximumFractionDigits: 1 })
-  return speed + ' (' + percent + ')'
+const loadPercent = new Intl.NumberFormat('ru-RU', { style: 'percent', maximumFractionDigits: 1 })
+
+function channelLoad(rate, capacity) {
+  return rate == null || !capacity ? null : rate * 8 / (capacity * 1e6)
+}
+
+function WanCard({ channel }) {
+  const receiveLoad = channelLoad(channel.rx, channel.download_mbps)
+  const sendLoad = channelLoad(channel.tx, channel.upload_mbps)
+  const loadLabel = channel.rx == null ? 'Нет замера приёма' : 'Тариф приёма не задан'
+
+  return (
+    <span className="inet-wan">
+      <span className="inet-wan-head">
+        <b className="inet-wan-name">{wanTitle(channel)}</b>
+        <span className="inet-wan-load">
+          {receiveLoad == null ? loadLabel : <>Загрузка приёма <b>{loadPercent.format(receiveLoad)}</b></>}
+        </span>
+      </span>
+      <span className="meter-track" aria-hidden="true">
+        {receiveLoad != null && <span className="meter-fill" style={{ width: `${Math.min(receiveLoad, 1) * 100}%` }} />}
+      </span>
+      <span className="inet-wan-rates">
+        <span><span className="muted">↓ Приём</span> <b>{bitrate(channel.rx)}</b></span>
+        <span><span className="muted">↑ Передача</span> <b>{bitrate(channel.tx)}</b>
+          {sendLoad != null && <span className="muted"> · {loadPercent.format(sendLoad)}</span>}
+        </span>
+      </span>
+    </span>
+  )
 }
 
 function InetStrip({ h }) {
@@ -552,14 +576,9 @@ function InetStrip({ h }) {
       {checked && <span className="muted inet-av">{!h.availability || h.availability.young ? 'доступность: мало данных' : <>за 30 дней <b className={`pct ${pctTone(h.availability.pct)}`}>{pctText(h.availability.pct)}</b></>}</span>}
       <Icon name="arrow" size={18} />
       {h.wan_channels?.length > 0 && (
-        <span className="inet-wan-list" aria-label="Загрузка каналов">
+        <span className="inet-wan-list">
           {h.wan_channels.map((channel) => (
-            <span className="inet-wan" key={JSON.stringify([channel.host, channel.iface])}>
-              <b>{wanTitle(channel)}</b>
-              <span>{channel.rx == null && channel.tx == null
-                ? 'Нет данных о трафике'
-                : <>↓ {channelRate(channel.rx, channel.download_mbps)} · ↑ {channelRate(channel.tx, channel.upload_mbps)}</>}</span>
-            </span>
+            <WanCard key={JSON.stringify([channel.host, channel.iface])} channel={channel} />
           ))}
         </span>
       )}
