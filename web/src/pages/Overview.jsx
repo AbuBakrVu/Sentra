@@ -426,15 +426,13 @@ export const needsEye = (h) => h.problems.length > 0 || ['critical', 'offline', 
 
 // Карта группы: один квадратик на машину. Порядок постоянный (по имени),
 // чтобы квадратик машины не прыгал по карте при смене состояния.
-export function DotMap({ items, big = false }) {
+function DotMap({ items }) {
   const list = items.slice().sort((a, b) => (kindOrder[a.kind] ?? 2) - (kindOrder[b.kind] ?? 2) || a.name.localeCompare(b.name, 'ru', { numeric: true }))
   return (
-    <div className={big ? 'dotmap big' : 'dotmap'}>
+    <div className="dotmap">
       {list.map((h) => {
         const label = `${h.name}: ${h.issues[0] ? h.issues[0].toLowerCase() : dotText[h.status]}`
-        return big
-          ? <span key={h.id} className={`dm s-${h.status}${isNode(h) ? ' node' : ''}`} title={label} />
-          : <Link key={h.id} to={`/hosts/${h.id}`} className={`dm s-${h.status}${isNode(h) ? ' node' : ''}`} title={label} aria-label={label} />
+        return <Link key={h.id} to={`/hosts/${h.id}`} className={`dm s-${h.status}${isNode(h) ? ' node' : ''}`} title={label} aria-label={label} />
       })}
     </div>
   )
@@ -562,7 +560,7 @@ function WanCard({ channel }) {
   )
 }
 
-function WanCards({ channels }) {
+export function useWanReadings(channels) {
   const [live, setLive] = useState(null)
   useEffect(() => {
     let active = true
@@ -581,7 +579,11 @@ function WanCards({ channels }) {
     return () => { active = false; clearTimeout(timer) }
   }, [])
 
-  const readings = live ?? channels.map((c) => ({ ...c, rx: null, tx: null }))
+  return live ?? channels.map((c) => ({ ...c, rx: null, tx: null }))
+}
+
+function WanCards({ channels }) {
+  const readings = useWanReadings(channels)
   if (!readings.length) return null
   return (
     <span className="inet-wan-list">
