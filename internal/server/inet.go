@@ -52,7 +52,7 @@ type InetTarget struct {
 	Addr string `json:"addr"`
 }
 
-const maxWANChannels = 2
+const maxWANChannels = 3
 
 type WANConfig struct {
 	Name      string  `json:"name,omitempty"`
@@ -579,7 +579,7 @@ func (s *Server) putInet(w http.ResponseWriter, r *http.Request, u *User) {
 	old := s.inetConfig()
 	in.normalizeWANChannels()
 	if len(in.WANChannels) > maxWANChannels {
-		httpErr(w, 400, "можно настроить до двух интернет-каналов")
+		httpErr(w, 400, "можно настроить до трёх интернет-каналов")
 		return
 	}
 	previous := map[wanKey]bool{}
@@ -600,7 +600,7 @@ func (s *Server) putInet(w http.ResponseWriter, r *http.Request, u *User) {
 		}
 		key := wanKey{wan.Host, wan.Interface}
 		if selected[key] {
-			httpErr(w, 400, "для двух каналов выберите разные WAN-интерфейсы")
+			httpErr(w, 400, "выберите отдельный WAN-интерфейс для каждого канала")
 			return
 		}
 		selected[key] = true

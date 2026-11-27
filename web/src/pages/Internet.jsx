@@ -313,7 +313,7 @@ function InetSettings({ config, onSaved }) {
             edit={(changes) => editChannel(channel.key, changes)}
             remove={() => setChannels((current) => current.filter((item) => item.key !== channel.key))} />
         ))}
-        {channels.length < 2 && <button type="button" className="link-btn" onClick={() => {
+        {channels.length < 3 && <button type="button" className="link-btn" onClick={() => {
           const key = nextChannelKey.current++
           setChannels((current) => [...current, { key, name: '', host: '', iface: '', download_mbps: '', upload_mbps: '' }])
         }}>Добавить канал</button>}

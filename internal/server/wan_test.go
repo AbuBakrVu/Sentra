@@ -75,16 +75,34 @@ func TestWANSelectionAndFreshRates(t *testing.T) {
 		t.Fatalf("incorrect second channel: %+v", second)
 	}
 
+	asaSource, err := st.AddSNMP("Cisco ASA", "192.0.2.3:161", snmp.Auth{Version: "2c"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	asaPort := map[string]any{"name": "outside", "up": true, "rx": 1000000, "tx": 250000}
+	asaID, err := st.UpsertPVEHost(asaSource, "dev", kindSNMP, "Cisco ASA", time.Now().Unix(), nil, map[string]any{"ifaces": []any{asaPort}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.WANChannels = append(cfg.WANChannels, WANConfig{Name: "Cisco ASA", Host: asaID, Interface: "outside", Download: 100, Upload: 50})
+	if save() != 200 {
+		t.Fatal("could not add the third WAN channel to an existing setup")
+	}
+	if got := s.inetHostView().WANChannels; len(got) != 3 || got[0].Host != id || got[1].Host != secondID ||
+		got[2].Host != asaID || got[2].RX == nil || *got[2].RX != 1000000 {
+		t.Fatalf("expected the original pair and the ASA channel: %+v", got)
+	}
+
 	st.SNMPResult(source, false, "timeout")
 	readings := s.inetHostView().WANChannels
-	if readings[0].RX != nil || readings[0].TX != nil || readings[1].RX == nil {
+	if readings[0].RX != nil || readings[0].TX != nil || readings[1].RX == nil || readings[2].RX == nil {
 		t.Fatal("one failed poll should suppress only its own channel")
 	}
 	cfg.WANChannels = append(cfg.WANChannels, cfg.WANChannels[0])
-	if save() != 400 || len(s.inetConfig().WANChannels) != 2 {
-		t.Fatal("a third channel changed the saved configuration")
+	if save() != 400 || len(s.inetConfig().WANChannels) != 3 {
+		t.Fatal("a fourth channel changed the saved configuration")
 	}
-	cfg.WANChannels = cfg.WANChannels[:2]
+	cfg.WANChannels = cfg.WANChannels[:3]
 	cfg.WANChannels[1] = cfg.WANChannels[0]
 	if save() != 400 || s.inetConfig().WANChannels[1].Host != secondID {
 		t.Fatal("duplicate channel replaced the saved configuration")
@@ -104,7 +122,7 @@ func TestLiveWANPollsSelectedPorts(t *testing.T) {
 	s := &Server{st: st, inet: newInetPoller()}
 	cfg := defaultInetConfig()
 	cfg.Enabled = false
-	for i, addr := range []string{"192.0.2.1:161", "192.0.2.2:161"} {
+	for i, addr := range []string{"192.0.2.1:161", "192.0.2.2:161", "192.0.2.3:161"} {
 		source, err := st.AddSNMP("Шлюз", addr, snmp.Auth{Version: "2c"})
 		if err != nil {
 			t.Fatal(err)
@@ -130,7 +148,7 @@ func TestLiveWANPollsSelectedPorts(t *testing.T) {
 		response := httptest.NewRecorder()
 		s.getWAN(response, httptest.NewRequest("GET", "/api/inet/wan", nil), &User{})
 		var out []wanReading
-		if err := json.Unmarshal(response.Body.Bytes(), &out); err != nil || len(out) != 2 {
+		if err := json.Unmarshal(response.Body.Bytes(), &out); err != nil || len(out) != 3 {
 			t.Fatalf("invalid WAN response: %s (%v)", response.Body, err)
 		}
 		return out
@@ -147,6 +165,7 @@ func TestLiveWANPollsSelectedPorts(t *testing.T) {
 			if secondUnavailable {
 				return snmp.Iface{}, 0, errors.New("timeout")
 			}
+		case addr == "192.0.2.3:161" && index == 4:
 		default:
 			t.Errorf("polled unselected interface %s/%d", addr, index)
 			return snmp.Iface{}, 0, errors.New("wrong interface")
@@ -165,7 +184,7 @@ func TestLiveWANPollsSelectedPorts(t *testing.T) {
 	}
 	secondUnavailable = true
 	s.wanCycle(context.Background(), poll)
-	if got := readings(); got[0].RX == nil || got[1].RX != nil || got[1].MeasuredAt != 0 {
+	if got := readings(); got[0].RX == nil || got[1].RX != nil || got[1].MeasuredAt != 0 || got[2].RX == nil || got[2].MeasuredAt == 0 {
 		t.Fatal("missing poll should invalidate only that interface")
 	}
 	uptime = 100
