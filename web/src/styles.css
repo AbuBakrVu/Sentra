@@ -415,7 +415,7 @@ code { font-family: ui-monospace, 'SF Mono', Consolas, monospace; font-size: 0.9
 @media (max-width: 640px) { .inet-av { margin-left: 0; } .tgt-row { grid-template-columns: 1fr; } }
 .empty-inet { margin-top: 28px; }
 
-/* ---------- вердикт, свежесть данных, меню «Добавить» ---------- */
+/* ---------- вердикт, свежесть данных, кнопка «Добавить» ---------- */
 .page-head { align-items: center; }
 .head-side { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 13.5px; }
 .verdict .headline { margin-bottom: 4px; }
@@ -434,8 +434,7 @@ code { font-family: ui-monospace, 'SF Mono', Consolas, monospace; font-size: 0.9
 .card.attn { margin-bottom: 12px; }
 .inet-strip { margin-bottom: 12px; }
 .dev-head { margin-top: 28px; }
-.addm .btn.pill { height: 40px; padding: 0 16px 0 12px; }
-.addm .me-pop { width: 260px; }
+.btn.pill.add-catalog { height: 40px; padding: 0 16px 0 12px; }
 .me-pop a span small { display: block; color: var(--ink-2); font-size: 12.5px; }
 .chart-key { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 4px 0 2px; font-size: 12px; color: var(--ink-2); }
 .chart-key i { display: inline-block; vertical-align: middle; margin-right: 6px; }
@@ -486,7 +485,7 @@ code { font-family: ui-monospace, 'SF Mono', Consolas, monospace; font-size: 0.9
 @media (max-width: 640px) { .wall { padding: 18px 16px; } .wall-probs li { grid-template-columns: 1fr; gap: 2px; } }
 
 /* ---------- телефон: меню внизу, таблицы карточками ---------- */
-@media (max-width: 480px) { .addm .btn.pill span { display: none; } .addm .btn.pill { padding: 0 11px; } }
+@media (max-width: 480px) { .add-catalog span { display: none; } .btn.pill.add-catalog { padding: 0 11px; } }
 @media (max-width: 640px) {
   /* размытие фона делает шапку точкой отсчёта для fixed: на телефоне оно не нужно */
   .topnav { backdrop-filter: none; background: var(--bg); }

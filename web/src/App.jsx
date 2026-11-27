@@ -119,29 +119,6 @@ function usePop(sel) {
   return [open, setOpen]
 }
 
-// Одна кнопка «Добавить» вместо отдельных разделов меню под каждый тип устройства.
-function AddMenu() {
-  const [open, setOpen] = usePop('.addm')
-  return (
-    <div className="me addm">
-      <button className="btn primary pill" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
-        <Icon name="plus" size={18} /><span>Добавить</span>
-      </button>
-      {open && (
-        <div className="me-pop" role="menu">
-          <Link to="/add" role="menuitem" onClick={() => setOpen(false)}><Icon name="grid" size={18} /><span>Каталог оборудования</span></Link>
-          <Link to="/add/ip" role="menuitem" onClick={() => setOpen(false)}><Icon name="network" size={18} /><span>По IP-адресу<small>Проверка доступности</small></span></Link>
-          <Link to="/add/linux" role="menuitem" onClick={() => setOpen(false)}><Icon name="server" size={18} /><span>Сервер с агентом<small>Linux, одна команда</small></span></Link>
-          <Link to="/add/proxmox" role="menuitem" onClick={() => setOpen(false)}><Icon name="layers" size={18} /><span>Proxmox<small>узлы и все машины сразу</small></span></Link>
-          <Link to="/add/pbs" role="menuitem" onClick={() => setOpen(false)}><Icon name="server" size={18} /><span>Proxmox Backup Server<small>хранилища и свежесть копий</small></span></Link>
-          <Link to="/add/vmware" role="menuitem" onClick={() => setOpen(false)}><Icon name="layers" size={18} /><span>VMware<small>vCenter или ESXi, все машины</small></span></Link>
-          <Link to="/add/snmp" role="menuitem" onClick={() => setOpen(false)}><Icon name="network" size={18} /><span>По SNMP<small>межсетевой экран, коммутатор, роутер</small></span></Link>
-        </div>
-      )}
-    </div>
-  )
-}
-
 function Brand() {
   return (
     <Link to="/" className="brand" aria-label="Sentra, обзор">
@@ -184,7 +161,11 @@ function TopNav({ path, user, logout, canManage }) {
       </nav>
       <div className="tn-right">
         <HostSearch />
-        {canManage && <AddMenu />}
+        {canManage && (
+          <Link to="/add" className="btn primary pill add-catalog" aria-label="Добавить">
+            <Icon name="plus" size={18} /><span>Добавить</span>
+          </Link>
+        )}
         <div className="me me-user">
           <button className="avatar" aria-haspopup="menu" aria-expanded={menu} aria-label={`Пользователь ${user.login}`} onClick={() => setMenu((v) => !v)}>
             {user.login.slice(0, 1).toUpperCase()}
