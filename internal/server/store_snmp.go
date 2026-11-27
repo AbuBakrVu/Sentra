@@ -87,6 +87,10 @@ func (s *Store) DeleteSNMP(id string) error {
 		return err
 	}
 	tx.Exec(`DELETE FROM problems WHERE host_id IN (SELECT id FROM hosts WHERE source_id=?)`, id)
+	if _, err := tx.Exec(`DELETE FROM settings WHERE key IN (SELECT ? || id FROM hosts WHERE source_id=?)`, snmpPortNamesPrefix, id); err != nil {
+		tx.Rollback()
+		return err
+	}
 	tx.Exec(`DELETE FROM hosts WHERE source_id=?`, id)
 	tx.Exec(`DELETE FROM snmp_devices WHERE id=?`, id)
 	return tx.Commit()

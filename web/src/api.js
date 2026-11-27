@@ -36,6 +36,7 @@ export const api = {
   addIP: (addr, name) => call('POST', '/api/ip', { addr, name }),
   hosts: () => call('GET', '/api/hosts'),
   host: (id) => call('GET', `/api/hosts/${id}`),
+  savePortNames: (id, names) => call('PUT', `/api/hosts/${id}/port-names`, names),
   rename: (id, name) => call('PATCH', `/api/hosts/${id}`, { name }),
   remove: (id) => call('DELETE', `/api/hosts/${id}`),
   chart: (id, m, range, iface) => call('GET', `/api/hosts/${id}/chart?m=${m}&range=${range}${iface ? `&iface=${encodeURIComponent(iface)}` : ''}`),

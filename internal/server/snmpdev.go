@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -192,6 +193,9 @@ func (s *Server) collectSNMP(ctx context.Context, d *SNMPDevice) error {
 			"index": f.Index, "name": f.Name, "alias": f.Alias, "mac": f.MAC, "physical": f.Physical,
 			"up": up, "admin_up": adminUp, "oper_status": f.OperStatus, "admin_status": f.AdminStatus, "speed": f.Speed,
 		}
+		if f.HardwareName != "" {
+			item["hardware_name"] = f.HardwareName
+		}
 		label := f.Name
 		if nameCounts[label] > 1 {
 			label = fmt.Sprintf("%s (#%d)", f.Name, f.Index)
@@ -272,6 +276,44 @@ func snmpIfaceRates(prev, cur snmp.Iface, dt float64) (rx, tx float64, ok bool) 
 }
 
 // ---------- API ----------
+
+const snmpPortNamesPrefix = "snmp-port-names:"
+
+func (s *Server) putSNMPPortNames(w http.ResponseWriter, r *http.Request, _ *User) {
+	h, err := s.st.Host(r.PathValue("id"))
+	if err != nil || h.Kind != kindSNMP {
+		httpErr(w, 404, "устройство SNMP не найдено")
+		return
+	}
+	names := map[string]string{}
+	if err := readJSON(r, &names, 64<<10); err != nil {
+		httpErr(w, 400, err.Error())
+		return
+	}
+	if names == nil {
+		httpErr(w, 400, "укажите список имён портов")
+		return
+	}
+	for key, name := range names {
+		port := wanPort(h, key)
+		if port["physical"] != true {
+			httpErr(w, 400, fmt.Sprintf("физический порт %q не найден", key))
+			return
+		}
+		name = strings.TrimSpace(name)
+		if name == "" || len([]rune(name)) > 80 {
+			httpErr(w, 400, "аппаратное имя порта должно содержать от 1 до 80 символов")
+			return
+		}
+		names[key] = name
+	}
+	raw, _ := json.Marshal(names)
+	if err := s.st.SetSetting(snmpPortNamesPrefix+h.ID, string(raw)); err != nil {
+		httpErr(w, 500, "не удалось сохранить имена портов")
+		return
+	}
+	writeJSON(w, 200, names)
+}
 
 type snmpIn struct {
 	Name      string `json:"name"`

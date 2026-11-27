@@ -331,6 +331,7 @@ type Disk struct {
 type Iface struct {
 	Index            int
 	Name, Alias, MAC string
+	HardwareName     string
 	Physical         bool
 	OperStatus       int     // ifOperStatus
 	AdminStatus      int     // ifAdminStatus

@@ -98,6 +98,7 @@ func (s *Server) Handler() http.Handler {
 	m.HandleFunc("GET /api/hosts", s.auth(s.listHosts))
 	m.HandleFunc("GET /api/hosts/{id}", s.auth(s.getHost))
 	m.HandleFunc("PATCH /api/hosts/{id}", s.admin(s.renameHost))
+	m.HandleFunc("PUT /api/hosts/{id}/port-names", s.admin(s.putSNMPPortNames))
 	m.HandleFunc("DELETE /api/hosts/{id}", s.admin(s.deleteHost))
 	m.HandleFunc("GET /api/hosts/{id}/chart", s.auth(s.chart))
 	m.HandleFunc("POST /api/enroll", s.admin(s.newEnroll))
@@ -472,14 +473,15 @@ func (s *Server) download(w http.ResponseWriter, r *http.Request) {
 
 type hostView struct {
 	*Host
-	WANChannels    []wanReading  `json:"wan_channels,omitempty"`
-	SNMPPollFailed bool          `json:"snmp_poll_failed,omitempty"`
-	Online         bool          `json:"online"`
-	Status         string        `json:"status"` // ok, warning, critical, offline, waiting, stopped
-	Issues         []string      `json:"issues"`
-	Problems       []*Problem    `json:"problems"`
-	Maint          bool          `json:"maintenance"`
-	Av             *Availability `json:"availability,omitempty"`
+	WANChannels    []wanReading      `json:"wan_channels,omitempty"`
+	SNMPPortNames  map[string]string `json:"snmp_port_names,omitempty"`
+	SNMPPollFailed bool              `json:"snmp_poll_failed,omitempty"`
+	Online         bool              `json:"online"`
+	Status         string            `json:"status"` // ok, warning, critical, offline, waiting, stopped
+	Issues         []string          `json:"issues"`
+	Problems       []*Problem        `json:"problems"`
+	Maint          bool              `json:"maintenance"`
+	Av             *Availability     `json:"availability,omitempty"`
 }
 
 // view собирает состояние устройства: связь и статус Proxmox берём напрямую,
@@ -648,6 +650,7 @@ func (s *Server) getHost(w http.ResponseWriter, r *http.Request, _ *User) {
 		return
 	}
 	if h.Kind == kindSNMP {
+		_ = json.Unmarshal([]byte(s.st.Setting(snmpPortNamesPrefix+h.ID)), &out[0].SNMPPortNames)
 		device, err := s.st.SNMPDevice(h.SourceID)
 		if err == nil {
 			out[0].SNMPPollFailed = device.LastError != ""

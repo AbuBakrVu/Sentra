@@ -176,7 +176,10 @@ export default function HostPage({ id, canManage }) {
         <p className="banner info">Показаны значения последнего успешного опроса SNMP от {new Date(h.last_seen * 1000).toLocaleString('ru-RU')}.</p>
       )}
       {isSNMP && (
-        <SNMPPorts stale={staleSNMP} key={id} id={id} meta={meta} range={range} tick={tick} history={history}>{rangePicker}</SNMPPorts>
+        <SNMPPorts stale={staleSNMP} key={id} id={id} meta={meta} range={range} tick={tick} history={history}
+          portNames={h.snmp_port_names} onPortNamesSaved={canManage ? (names) => setH((prev) => ({ ...prev, snmp_port_names: names })) : undefined}>
+          {rangePicker}
+        </SNMPPorts>
       )}
 
       <section className="host-av" aria-labelledby="av-h">

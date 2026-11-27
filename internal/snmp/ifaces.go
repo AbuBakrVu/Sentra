@@ -15,7 +15,7 @@ import (
 
 // Net-SNMP на Linux может объявлять разъём у виртуального интерфейса.
 // Учитываем известные системные имена, включая интерфейсы Ideco.
-var logicalIfaceName = regexp.MustCompile(`(?i)^(?:veth|virbr|ipsec|ccwg_|fwtest$|sw_|lb_|(?:lo|lvlan|lbond|lvpn|eppp|ppp|vlan|bond|team|bridge|br|tun|tap|wg|vxlan|gre|gretap|dummy|docker|sit)(?:[0-9_.-]|$))|\.[0-9]+$`)
+var logicalIfaceName = regexp.MustCompile(`(?i)^(?:veth|virbr|ipsec|ccwg_|fwtest$|sw_|lb_|(?:lo|lvlan|lbond|lvpn|eppp|ppp|virtual|vlan|bond|team|bridge|br|tun|tap|wg|vxlan|gre|gretap|dummy|docker|sit)(?:[0-9_.-]|$))|\.[0-9]+$`)
 
 // PollInterface reads the counters and status for one interface without walking the device.
 func PollInterface(ctx context.Context, addr string, auth Auth, index int) (Iface, uint32, error) {
@@ -53,6 +53,9 @@ func PollInterface(ctx context.Context, addr string, auth Auth, index int) (Ifac
 	}
 	return ports[0], uint32(num(m[oidSysUpTime])), nil
 }
+
+var physicalPortName = regexp.MustCompile(`(?i)^(?:Adaptive Security Appliance ['"]?)?((?:GigabitEthernet|FastEthernet|TenGigabitEthernet|Ethernet|Management|Gi|Fa|Te|Eth|Mgmt)[0-9]+(?:/[0-9]+)*)(?:['"]? interface)?$`)
+var asaVirtualDescription = regexp.MustCompile(`(?i)^Adaptive Security Appliance ['"]?Virtual[0-9]+['"]? interface$`)
 
 func readIfaces(ifs, xs, stack []gosnmp.SnmpPDU) []Iface {
 	it, xt := table(ifs, oidIfTable), table(xs, oidIfXTable)
@@ -96,7 +99,11 @@ func readIfaces(ifs, xs, stack []gosnmp.SnmpPDU) []Iface {
 		if highSpeed := num(xt[15][idx]); highSpeed > 0 {
 			f.Speed = highSpeed * 1e6 // ifHighSpeed в Мбит/с
 		}
-		f.Physical = !upperLayers[idx] && !logicalIfaceName.MatchString(name) && physicalIface(kind, int(num(xt[17][idx])), f.MAC)
+		f.Physical = !upperLayers[idx] && !logicalIfaceName.MatchString(name) && !asaVirtualDescription.MatchString(descr) &&
+			physicalIface(kind, int(num(xt[17][idx])), f.MAC)
+		if matches := physicalPortName.FindStringSubmatch(descr); f.Physical && len(matches) > 0 && matches[1] != name {
+			f.HardwareName = matches[1]
+		}
 		in, out := xt[6][idx], xt[10][idx]
 		f.HC = in.Type == gosnmp.Counter64 && out.Type == gosnmp.Counter64
 		if !f.HC {

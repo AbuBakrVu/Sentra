@@ -38,6 +38,17 @@
 .snmp-port[data-state="up"] { --signal: var(--ok); --tint: var(--ok-bg); }
 .snmp-port[data-state="down"] { --signal: var(--crit); --tint: var(--crit-bg); }
 .snmp-port-name { max-width: 100%; overflow-wrap: anywhere; font-size: 13px; }
+.snmp-port-label {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  max-width: 100%;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--ink-2);
+}
 .snmp-jack {
   position: relative;
   display: block;

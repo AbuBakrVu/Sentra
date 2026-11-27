@@ -14,7 +14,7 @@ function panelPositions(meta, ports) {
   const used = new Set()
   let member
   for (const port of ports) {
-    const match = /^(?:Gi|GigabitEthernet)(\d+)\/0\/(\d+)$/i.exec(port.name)
+    const match = /^(?:Gi|GigabitEthernet)(\d+)\/0\/(\d+)$/i.exec(port.hardware_name || port.name)
     if (!match) continue // Modular uplinks have a separate bank.
     const number = Number(match[2])
     if ((member && member !== match[1]) || number < 1 || number > count || used.has(number)) return null
@@ -43,20 +43,25 @@ function loadPercent(rate, speed) {
 function Port({ port, status, selected, select, position }) {
   const up = status === 'На связи'
   const down = ['Нет связи', 'Выключен', 'Отсутствует'].includes(status)
-  const details = [port.name, port.alias, port.mac, status]
+  const title = port.hardware_name || port.name
+  const logical = title !== port.name ? port.name : ''
+  const description = port.alias !== title && port.alias !== port.name ? port.alias : ''
+  const details = [title, logical, description, port.mac, status]
   if (up) details.push('Скорость линка: ' + bitrate(port.speed > 0 ? port.speed / 8 : null),
     'Загрузка на приём: ' + loadPercent(port.rx, port.speed), 'На передачу: ' + loadPercent(port.tx, port.speed))
   return (
     <button type="button" className="snmp-port" data-state={up ? 'up' : down ? 'down' : 'unknown'}
       style={position} aria-pressed={selected} title={details.filter(Boolean).join('\n')}
       onClick={() => select(port.index ?? port.name)}>
-      <b className="snmp-port-name">{port.name}</b>
+      <b className="snmp-port-name">{title}</b>
       <span className="snmp-jack" aria-hidden="true"><i /></span>
       <span className="snmp-port-status">{status}</span>
       {up && <span className="snmp-port-rates">
         <span><span className="sr-only">Приём </span>↓ {bitrate(port.rx)}</span>
         <span><span className="sr-only">Передача </span>↑ {bitrate(port.tx)}</span>
       </span>}
+      {logical && <span className="snmp-port-label">{logical}</span>}
+      {description && <span className="snmp-port-label">{description}</span>}
     </button>
   )
 }
@@ -75,8 +80,9 @@ export default function PortMap({ ports, meta, stale, selected, select }) {
       </div>
       {extra.length > 0 && <div className="snmp-port-bank">{extra.map(renderPort)}</div>}
       {showDetails && <div className="snmp-port-info" aria-label="Выбранный порт">
-        <b>{selected.name}</b>
-        {selected.alias && selected.alias !== selected.name && <span>{selected.alias}</span>}
+        <b>{selected.hardware_name || selected.name}</b>
+        {selected.hardware_name && selected.hardware_name !== selected.name && <span>{selected.name}</span>}
+        {selected.alias && selected.alias !== selected.name && selected.alias !== selected.hardware_name && <span>{selected.alias}</span>}
         {selected.mac && <span>{selected.mac}</span>}
         {active && <>
           <span>Линк {bitrate(selected.speed > 0 ? selected.speed / 8 : null)}</span>

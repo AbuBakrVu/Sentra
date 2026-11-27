@@ -116,3 +116,24 @@ func TestUsableDisks(t *testing.T) {
 		}
 	}
 }
+
+func TestReadASAInterfaces(t *testing.T) {
+	base := []gosnmp.SnmpPDU{
+		{Name: oidIfTable + ".2.2", Type: gosnmp.OctetString, Value: "Adaptive Security Appliance 'outside' interface"},
+		{Name: oidIfTable + ".2.6", Type: gosnmp.OctetString, Value: "Management0/0"},
+		{Name: oidIfTable + ".2.7", Type: gosnmp.OctetString, Value: "Adaptive Security Appliance 'Virtual254' interface"},
+	}
+	extended := []gosnmp.SnmpPDU{
+		{Name: oidIfXTable + ".1.2", Type: gosnmp.OctetString, Value: "outside"},
+		{Name: oidIfXTable + ".18.2", Type: gosnmp.OctetString, Value: "Uplink"},
+		{Name: oidIfXTable + ".1.6", Type: gosnmp.OctetString, Value: "management"},
+		{Name: oidIfXTable + ".17.2", Type: gosnmp.Integer, Value: 1},
+		{Name: oidIfXTable + ".17.6", Type: gosnmp.Integer, Value: 1},
+		{Name: oidIfXTable + ".17.7", Type: gosnmp.Integer, Value: 1},
+	}
+	ports := readIfaces(base, extended, nil)
+	if len(ports) != 3 || ports[0].Name != "outside" || ports[0].Alias != "Uplink" || ports[0].HardwareName != "" ||
+		ports[1].Name != "management" || ports[1].HardwareName != "Management0/0" || ports[2].Physical {
+		t.Fatalf("unexpected ASA interface names: %+v", ports)
+	}
+}

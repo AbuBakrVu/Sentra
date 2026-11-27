@@ -135,3 +135,45 @@ func TestCollectSNMPLive(t *testing.T) {
 		t.Errorf("статус %s %v", views[0].Status, views[0].Issues)
 	}
 }
+
+func TestSNMPHardwareNames(t *testing.T) {
+	st := testStore(t)
+	source := "cisco-asa"
+	interfaces := []any{
+		map[string]any{"name": "outside", "alias": "Провайдер", "physical": true},
+		map[string]any{"name": "Virtual254", "physical": false},
+	}
+	id, err := st.UpsertPVEHost(source, "dev", kindSNMP, "ASA", time.Now().Unix(), nil, map[string]any{"ifaces": interfaces})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := &Server{st: st}
+	for _, c := range []struct {
+		body string
+		code int
+	}{
+		{`{"outside":" GigabitEthernet0/0 "}`, http.StatusOK},
+		{`{"Virtual254":"GigabitEthernet0/1"}`, http.StatusBadRequest},
+	} {
+		req := httptest.NewRequest("PUT", "/api/hosts/"+id+"/port-names", strings.NewReader(c.body))
+		req.Header.Set("Content-Type", "application/json")
+		req.SetPathValue("id", id)
+		res := httptest.NewRecorder()
+		server.putSNMPPortNames(res, req, &User{})
+		if res.Code != c.code {
+			t.Fatalf("save %s: %d %s", c.body, res.Code, res.Body)
+		}
+	}
+	req := httptest.NewRequest("GET", "/api/hosts/"+id, nil)
+	req.SetPathValue("id", id)
+	res := httptest.NewRecorder()
+	server.getHost(res, req, &User{})
+	var view hostView
+	if err := json.Unmarshal(res.Body.Bytes(), &view); err != nil || view.SNMPPortNames["outside"] != "GigabitEthernet0/0" ||
+		wanPort(view.Host, "outside")["alias"] != "Провайдер" {
+		t.Fatalf("port names and SNMP identity should be independent: %s (%v)", res.Body, err)
+	}
+	if err := st.DeleteSNMP(source); err != nil || st.Setting(snmpPortNamesPrefix+id) != "" {
+		t.Fatalf("port names should be cleaned up on deletion: %v", err)
+	}
+}
